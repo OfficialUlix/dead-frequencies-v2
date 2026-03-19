@@ -1,358 +1,397 @@
 /* ═══════════════════════════════════════════════════════════════
-   DEAD FREQUENCIES v2 — Experience Engine
-   Gate → Boot → Descent → Phases → Message → End
+   DEAD FREQUENCIES — Transmission Experience Engine
+   State Machine: gate → handshake → sigmap → (panel) → finale
    ═══════════════════════════════════════════════════════════════ */
 
 (function () {
   "use strict";
 
+  const $ = (s, c = document) => c.querySelector(s);
+  const $$ = (s, c = document) => [...c.querySelectorAll(s)];
+
+  /* ── Track data ─────────────────────────────────────────── */
+  const TRACKS = {
+    1: {
+      number: "01", title: "Static Signals",
+      phase: "Phase: Interference", status: "SIGNAL DETECTED",
+      signal: 6, pct: "78%", color: "cold",
+      body: "The first glitches appear. The world feels off — systems flicker, structures crack. Something beneath the surface is starting to fail.",
+      fragment: '"the screens keep splitting / nothing holds its shape"',
+    },
+    2: {
+      number: "02", title: "Drown Tonight",
+      phase: "Phase: Submersion", status: "SIGNAL DEGRADING",
+      signal: 4, pct: "54%", color: "warm",
+      body: "The collapse turns inward. Noise and pressure overwhelm until breathing through the disconnection feels impossible.",
+      fragment: '"sinking past the frequency / where voices used to reach"',
+    },
+    3: {
+      number: "03", title: "Ghost",
+      phase: "Phase: Fracture", status: "IDENTITY FRAGMENTED",
+      signal: 3, pct: "32%", color: "ghost",
+      body: "Still physically present, but mentally absent. Identity fractures until the self becomes a ghost inside its own life.",
+      fragment: '"i\'m standing right here / but nothing registers"',
+    },
+    4: {
+      number: "04", title: "Neon Graves",
+      phase: "Phase: Collapse", status: "SIGNAL LOST",
+      signal: 1, pct: "08%", color: "critical",
+      body: "Total breakdown. Dead lights and lost signals turn the city into a graveyard of everything that once felt stable.",
+      fragment: '"every light that burned is now a monument to what we lost"',
+    },
+    5: {
+      number: "05", title: "Light The Fire",
+      phase: "Phase: Defiance", status: "SIGNAL OVERRIDE",
+      signal: 4, pct: "MANUAL", color: "ember",
+      body: "A moment of defiance. Instead of waiting for the system to recover, the protagonist breaks free from it.",
+      fragment: '"burn the protocol / override the silence"',
+    },
+    6: {
+      number: "06", title: "We Remain",
+      phase: "Phase: Survival", status: "SIGNAL PERSISTS",
+      signal: 8, pct: "HUMAN", color: "resolve",
+      body: "Silence settles after the collapse. The world is scarred and broken, but something human survives — and keeps transmitting.",
+      fragment: '"after everything / we are still here / still transmitting"',
+    },
+  };
+
   /* ── State ──────────────────────────────────────────────── */
   const state = {
     soundOn: true,
-    gateOpen: false,
-    currentPhase: 0,
-    totalPhases: 6,
+    explored: new Set(),
+    panelOpen: false,
   };
 
-  /* ── DOM refs ───────────────────────────────────────────── */
-  const $ = (s, ctx = document) => ctx.querySelector(s);
-  const $$ = (s, ctx = document) => [...ctx.querySelectorAll(s)];
-
-  const gate = $("#gate");
+  /* ── DOM ────────────────────────────────────────────────── */
+  const html = document.documentElement;
   const gateLines = $$(".gate__line");
-  const gateActions = $(".gate__actions");
-  const gateEnter = $(".gate__enter");
-  const gateVersion = $(".gate__version");
-  const soundChoices = $$(".gate__sound-choice");
-  const experience = $("#experience");
-  const titleReveal = $(".title-reveal");
-  const soundToggle = $(".sound-toggle");
-  const signalMeter = $(".signal-meter");
-  const meterFill = $(".signal-meter__fill");
-  const meterLabel = $(".signal-meter__label");
-  const phases = $$(".phase");
-  const message = $(".message");
-  const endscreen = $(".endscreen");
+  const gateControls = $(".gate__controls");
+  const gateEnterBtn = $(".gate__enter");
+  const gateSndBtns = $$(".gate__snd");
+  const soundBtn = $(".sound-btn");
+  const handshakeProceed = $(".handshake__proceed");
+  const nodes = $$(".node");
+  const panel = $("#panel");
+  const panelClose = $(".panel__close");
+  const decodedCount = $("#decoded-count");
+  const revisitBtn = $("#revisit-btn");
 
-  /* ── Audio context (lazy init) ──────────────────────────── */
-  let audioCtx = null;
-  let ambientNode = null;
-  let ambientGain = null;
+  /* ── Audio Engine ───────────────────────────────────────── */
+  let actx = null;
+  let masterGain = null;
+  let droneOsc = null;
+  let droneOsc2 = null;
+  let noiseGain = null;
+  let noiseSource = null;
 
   function initAudio() {
-    if (audioCtx) return;
+    if (actx) return;
     try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      ambientGain = audioCtx.createGain();
-      ambientGain.gain.value = 0;
-      ambientGain.connect(audioCtx.destination);
+      actx = new (window.AudioContext || window.webkitAudioContext)();
 
-      // Dark ambient drone — filtered noise
-      const bufferSize = 2 * audioCtx.sampleRate;
-      const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-      const output = noiseBuffer.getChannelData(0);
-      for (let i = 0; i < bufferSize; i++) {
-        output[i] = Math.random() * 2 - 1;
+      masterGain = actx.createGain();
+      masterGain.gain.setValueAtTime(0, actx.currentTime);
+      masterGain.connect(actx.destination);
+
+      // Drone oscillator — deep sub bass
+      droneOsc = actx.createOscillator();
+      droneOsc.type = "sine";
+      droneOsc.frequency.setValueAtTime(42, actx.currentTime);
+      const droneGain = actx.createGain();
+      droneGain.gain.setValueAtTime(0.35, actx.currentTime);
+      droneOsc.connect(droneGain);
+      droneGain.connect(masterGain);
+      droneOsc.start();
+
+      // Second oscillator — slight detuned unease
+      droneOsc2 = actx.createOscillator();
+      droneOsc2.type = "sine";
+      droneOsc2.frequency.setValueAtTime(42.7, actx.currentTime);
+      const drone2Gain = actx.createGain();
+      drone2Gain.gain.setValueAtTime(0.2, actx.currentTime);
+      droneOsc2.connect(drone2Gain);
+      drone2Gain.connect(masterGain);
+      droneOsc2.start();
+
+      // Filtered noise layer — atmosphere
+      const bufSize = actx.sampleRate * 4;
+      const noiseBuf = actx.createBuffer(1, bufSize, actx.sampleRate);
+      const data = noiseBuf.getChannelData(0);
+      // Brown noise (warmer, deeper)
+      let last = 0;
+      for (let i = 0; i < bufSize; i++) {
+        const white = Math.random() * 2 - 1;
+        last = (last + 0.02 * white) / 1.02;
+        data[i] = last * 3.5;
       }
 
-      ambientNode = audioCtx.createBufferSource();
-      ambientNode.buffer = noiseBuffer;
-      ambientNode.loop = true;
+      noiseSource = actx.createBufferSource();
+      noiseSource.buffer = noiseBuf;
+      noiseSource.loop = true;
 
-      // Heavy low-pass for deep rumble
-      const lpf = audioCtx.createBiquadFilter();
-      lpf.type = "lowpass";
-      lpf.frequency.value = 120;
-      lpf.Q.value = 0.7;
+      const noiseLPF = actx.createBiquadFilter();
+      noiseLPF.type = "lowpass";
+      noiseLPF.frequency.setValueAtTime(200, actx.currentTime);
+      noiseLPF.Q.setValueAtTime(0.5, actx.currentTime);
 
-      // Subtle resonance
-      const resonance = audioCtx.createBiquadFilter();
-      resonance.type = "bandpass";
-      resonance.frequency.value = 55;
-      resonance.Q.value = 5;
+      noiseGain = actx.createGain();
+      noiseGain.gain.setValueAtTime(0.15, actx.currentTime);
 
-      ambientNode.connect(lpf);
-      lpf.connect(resonance);
-      resonance.connect(ambientGain);
+      noiseSource.connect(noiseLPF);
+      noiseLPF.connect(noiseGain);
+      noiseGain.connect(masterGain);
+      noiseSource.start();
 
-      ambientNode.start();
     } catch (e) {
-      // Audio not available — silent fallback
+      // Audio not available — degrade gracefully
+      actx = null;
     }
   }
 
-  function setAmbientVolume(vol, duration = 2) {
-    if (!ambientGain) return;
-    ambientGain.gain.linearRampToValueAtTime(
-      vol,
-      audioCtx.currentTime + duration
-    );
+  function fadeAudio(vol, dur = 2) {
+    if (!masterGain || !actx) return;
+    masterGain.gain.cancelScheduledValues(actx.currentTime);
+    masterGain.gain.setValueAtTime(masterGain.gain.value, actx.currentTime);
+    masterGain.gain.linearRampToValueAtTime(vol, actx.currentTime + dur);
   }
 
-  /* ── Gate: Boot sequence ────────────────────────────────── */
-  function runBootSequence() {
+  function playNodeSound(trackNum) {
+    if (!actx || !state.soundOn) return;
+    try {
+      // Short tonal ping matching the track's emotional register
+      const freqMap = { 1: 440, 2: 330, 3: 294, 4: 220, 5: 392, 6: 523 };
+      const osc = actx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freqMap[trackNum] || 440, actx.currentTime);
+
+      const g = actx.createGain();
+      g.gain.setValueAtTime(0, actx.currentTime);
+      g.gain.linearRampToValueAtTime(0.12, actx.currentTime + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 1.2);
+
+      osc.connect(g);
+      g.connect(actx.destination);
+      osc.start();
+      osc.stop(actx.currentTime + 1.5);
+    } catch (e) { /* silent fail */ }
+  }
+
+  function playCompletionSound() {
+    if (!actx || !state.soundOn) return;
+    try {
+      // Resolved chord — C major spread
+      [262, 330, 392, 523].forEach((freq, i) => {
+        const osc = actx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, actx.currentTime);
+        const g = actx.createGain();
+        g.gain.setValueAtTime(0, actx.currentTime);
+        g.gain.linearRampToValueAtTime(0.08, actx.currentTime + 0.1 + i * 0.15);
+        g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 3);
+        osc.connect(g);
+        g.connect(actx.destination);
+        osc.start(actx.currentTime + i * 0.15);
+        osc.stop(actx.currentTime + 3.5);
+      });
+    } catch (e) { /* silent fail */ }
+  }
+
+  /* ── State Machine ──────────────────────────────────────── */
+  function setState(name) {
+    html.dataset.state = name;
+
+    if (name === "handshake" || name === "sigmap" || name === "finale") {
+      soundBtn.classList.add("is-visible");
+    }
+  }
+
+  /* ── Gate Boot ──────────────────────────────────────────── */
+  function runBoot() {
     gateLines.forEach((line) => {
-      const delay = parseInt(line.dataset.delay, 10) || 0;
-      setTimeout(() => line.classList.add("is-typed"), delay);
+      const d = parseInt(line.dataset.delay, 10) || 0;
+      setTimeout(() => line.classList.add("is-typed"), d);
     });
-
-    // Reveal actions after last line
-    const lastDelay = Math.max(...gateLines.map((l) => parseInt(l.dataset.delay, 10) || 0));
-
-    setTimeout(() => {
-      gateActions.classList.add("is-revealed");
-    }, lastDelay + 600);
-
-    setTimeout(() => {
-      gateEnter.classList.add("is-revealed");
-    }, lastDelay + 1000);
+    const last = Math.max(...gateLines.map((l) => parseInt(l.dataset.delay, 10) || 0));
+    setTimeout(() => gateControls.classList.add("is-revealed"), last + 700);
   }
 
-  /* ── Gate: Sound choice ─────────────────────────────────── */
-  soundChoices.forEach((btn) => {
+  /* ── Gate Sound Choice ──────────────────────────────────── */
+  gateSndBtns.forEach((btn) => {
     btn.addEventListener("click", () => {
-      soundChoices.forEach((b) => b.classList.remove("gate__sound-choice--active"));
-      btn.classList.add("gate__sound-choice--active");
+      gateSndBtns.forEach((b) => b.classList.remove("gate__snd--active"));
+      btn.classList.add("gate__snd--active");
       state.soundOn = btn.dataset.sound === "on";
     });
   });
 
-  /* ── Gate: Enter experience ─────────────────────────────── */
-  gateEnter.addEventListener("click", () => {
-    if (state.gateOpen) return;
-    state.gateOpen = true;
-
-    // Init audio if sound on
+  /* ── Gate Enter ─────────────────────────────────────────── */
+  gateEnterBtn.addEventListener("click", () => {
     if (state.soundOn) {
       initAudio();
-      setAmbientVolume(0.08, 3);
-      soundToggle.setAttribute("data-active", "true");
+      if (actx && actx.state === "suspended") actx.resume();
+      fadeAudio(0.25, 3);
+      soundBtn.setAttribute("data-active", "true");
     }
-
-    // Transition out gate
-    gate.classList.add("is-exiting");
-
-    setTimeout(() => {
-      gate.classList.add("is-hidden");
-      document.documentElement.classList.add("experience-started");
-      experience.classList.add("is-active");
-      titleReveal.classList.add("is-active");
-
-      // Show persistent UI
-      soundToggle.classList.add("is-visible");
-
-      // Start observing phases
-      initScrollObservers();
-    }, 900);
+    setState("handshake");
   });
 
-  /* ── Sound toggle (persistent) ──────────────────────────── */
-  soundToggle.addEventListener("click", () => {
+  /* ── Handshake → Signal Map ─────────────────────────────── */
+  handshakeProceed.addEventListener("click", () => {
+    setState("sigmap");
+  });
+
+  /* ── Sound Toggle (persistent) ──────────────────────────── */
+  soundBtn.addEventListener("click", () => {
     state.soundOn = !state.soundOn;
-    soundToggle.setAttribute("data-active", state.soundOn.toString());
-
+    soundBtn.setAttribute("data-active", String(state.soundOn));
     if (state.soundOn) {
       initAudio();
-      setAmbientVolume(0.08, 1);
+      if (actx && actx.state === "suspended") actx.resume();
+      fadeAudio(0.25, 1);
     } else {
-      setAmbientVolume(0, 0.5);
+      fadeAudio(0, 0.5);
     }
   });
 
-  /* ── Scroll observation — phase visibility ──────────────── */
-  function initScrollObservers() {
-    // Phases
-    const phaseObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
-            const phaseNum = parseInt(entry.target.dataset.phase, 10);
-            updateEnvironment(phaseNum);
-          }
-        });
-      },
-      { threshold: 0.25, rootMargin: "0px 0px -10% 0px" }
-    );
+  /* ── Node tap → open panel ──────────────────────────────── */
+  nodes.forEach((node) => {
+    node.addEventListener("click", () => {
+      const id = parseInt(node.dataset.track, 10);
+      openPanel(id, node);
+    });
+  });
 
-    phases.forEach((p) => phaseObserver.observe(p));
+  function openPanel(trackId, nodeEl) {
+    const t = TRACKS[trackId];
+    if (!t) return;
 
-    // Message
-    const msgObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
-            msgObserver.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.2 }
-    );
-    if (message) msgObserver.observe(message);
+    // Set panel color scope
+    panel.style.setProperty("--phase-color", `var(--${t.color === "ghost" ? "ghost-c" : t.color})`);
+    panel.style.setProperty("--phase-glow", `var(--${t.color === "ghost" ? "ghost-c" : t.color})`);
 
-    // Endscreen
-    const endObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("is-visible");
-            endObserver.unobserve(entry.target);
-          }
-        });
-      },
-      { threshold: 0.2 }
-    );
-    if (endscreen) endObserver.observe(endscreen);
+    // Fill content
+    $("#panel-number").textContent = t.number;
+    $("#panel-phase").textContent = t.phase;
+    $("#panel-pct").textContent = t.pct;
+    $("#panel-title").textContent = t.title;
+    $("#panel-status").textContent = t.status;
+    $("#panel-body").textContent = t.body;
+    $("#panel-fragment").textContent = t.fragment;
 
-    // Signal meter — show after scrolling past title
-    const meterTrigger = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (!entry.isIntersecting) {
-            signalMeter.classList.add("is-visible");
-          } else {
-            signalMeter.classList.remove("is-visible");
-          }
-        });
-      },
-      { threshold: 0.5 }
-    );
-    if (titleReveal) meterTrigger.observe(titleReveal);
+    // Signal bars
+    renderBars($("#panel-bars"), t.signal, t.color);
 
-    // Scroll-hint hide
-    const scrollCue = $(".title-reveal__scroll-cue");
-    if (scrollCue) {
-      let cueHidden = false;
-      window.addEventListener(
-        "scroll",
-        () => {
-          if (!cueHidden && window.scrollY > 100) {
-            scrollCue.style.opacity = "0";
-            scrollCue.style.transition = "opacity 0.5s ease";
-            cueHidden = true;
-          }
-        },
-        { passive: true }
-      );
-    }
-  }
+    // Open
+    panel.classList.add("is-open");
+    panel.setAttribute("aria-hidden", "false");
+    state.panelOpen = true;
 
-  /* ── Environment mutations per phase ────────────────────── */
-  function updateEnvironment(phaseNum) {
-    if (phaseNum === state.currentPhase) return;
-    state.currentPhase = phaseNum;
+    // Mark explored
+    if (!state.explored.has(trackId)) {
+      state.explored.add(trackId);
+      nodeEl.classList.add("is-decoded");
 
-    // Update signal meter
-    const progress = (phaseNum / state.totalPhases) * 100;
-    if (meterFill) meterFill.style.height = progress + "%";
-    if (meterLabel) meterLabel.textContent = `0${phaseNum} / 06`;
+      const count = state.explored.size;
+      decodedCount.textContent = String(count);
+      html.dataset.explored = String(count);
 
-    // Update meter color to match phase
-    const phaseEl = $(`[data-phase="${phaseNum}"]`);
-    if (phaseEl) {
-      const phaseColor = getComputedStyle(phaseEl).getPropertyValue("--phase-color").trim();
-      if (meterFill && phaseColor) {
-        meterFill.style.backgroundColor = phaseColor;
-        meterFill.style.boxShadow = `0 0 8px ${phaseColor}40`;
+      // Audio feedback
+      playNodeSound(trackId);
+
+      // Check completion
+      if (count === 6) {
+        setTimeout(() => {
+          closePanel();
+          setTimeout(() => {
+            playCompletionSound();
+            fadeAudio(0.05, 4);
+            setState("finale");
+          }, 500);
+        }, 1800);
       }
     }
-
-    // Grain intensity shifts
-    const grainMap = { 1: 0.18, 2: 0.22, 3: 0.15, 4: 0.35, 5: 0.2, 6: 0.12 };
-    document.documentElement.style.setProperty(
-      "--grain-intensity",
-      grainMap[phaseNum] || 0.18
-    );
-
-    // Scanline speed shift — faster during critical phases
-    const scanEl = $(".atmos__scanline");
-    if (scanEl) {
-      const scanSpeed = phaseNum === 4 ? "4s" : phaseNum === 3 ? "6s" : "8s";
-      scanEl.style.animationDuration = scanSpeed;
-    }
-
-    // Ambient audio pitch/volume shift
-    if (state.soundOn && ambientGain) {
-      const volMap = { 1: 0.06, 2: 0.1, 3: 0.05, 4: 0.15, 5: 0.08, 6: 0.03 };
-      setAmbientVolume(volMap[phaseNum] || 0.06, 1.5);
-    }
   }
 
-  /* ── Title micro-glitch ─────────────────────────────────── */
-  const titlePrimary = $(".title-reveal__primary");
+  function closePanel() {
+    panel.classList.remove("is-open");
+    panel.setAttribute("aria-hidden", "true");
+    state.panelOpen = false;
+  }
+
+  panelClose.addEventListener("click", closePanel);
+  $(".panel__backdrop").addEventListener("click", closePanel);
+
+  // Escape key
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && state.panelOpen) closePanel();
+  });
+
+  /* ── Signal bar renderer ────────────────────────────────── */
+  function renderBars(container, filled, color) {
+    const total = 8;
+    const colorVar = color === "ghost" ? "var(--ghost-c)" : `var(--${color})`;
+    let html = "";
+    for (let i = 0; i < total; i++) {
+      const on = i < filled;
+      html += `<span style="
+        display:inline-block; width:3px; height:${3 + i * 1.1}px;
+        border-radius:1px; margin-right:1px;
+        background:${on ? colorVar : "var(--line)"};
+        opacity:${on ? 0.7 : 0.25};
+        vertical-align:bottom;
+      "></span>`;
+    }
+    container.innerHTML = html;
+  }
+
+  /* ── Revisit button (finale → sigmap) ───────────────────── */
+  if (revisitBtn) {
+    revisitBtn.addEventListener("click", () => {
+      setState("sigmap");
+    });
+  }
+
+  /* ── Title micro-glitch (handshake) ─────────────────────── */
+  const titlePrimary = $(".handshake__primary");
   if (titlePrimary) {
-    function triggerMicroGlitch() {
+    (function glitch() {
+      if (html.dataset.state !== "handshake") {
+        return setTimeout(glitch, 2000);
+      }
       const dx = (Math.random() - 0.5) * 3;
       const dy = (Math.random() - 0.5) * 1.5;
       titlePrimary.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
-      titlePrimary.style.opacity = (0.82 + Math.random() * 0.18).toString();
-
+      titlePrimary.style.opacity = String(0.82 + Math.random() * 0.18);
       setTimeout(() => {
         titlePrimary.style.transform = "";
         titlePrimary.style.opacity = "";
       }, 50 + Math.random() * 70);
-
-      setTimeout(triggerMicroGlitch, 4000 + Math.random() * 6000);
-    }
-
-    setTimeout(triggerMicroGlitch, 3000);
+      setTimeout(glitch, 3500 + Math.random() * 5000);
+    })();
   }
 
-  /* ── Parallax on title orbs (desktop only) ──────────────── */
-  const titleSection = $(".title-reveal");
-  const orbs = $$(".title-reveal__orb");
-
-  if (titleSection && orbs.length && window.matchMedia("(pointer: fine)").matches) {
+  /* ── Parallax on handshake orbs (desktop) ───────────────── */
+  const hs = $(".handshake");
+  const orbs = $$(".handshake__orb");
+  if (hs && orbs.length && window.matchMedia("(pointer: fine)").matches) {
     let ticking = false;
-    titleSection.addEventListener("mousemove", (e) => {
+    hs.addEventListener("mousemove", (e) => {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
-        const rect = titleSection.getBoundingClientRect();
-        const x = (e.clientX - rect.left) / rect.width - 0.5;
-        const y = (e.clientY - rect.top) / rect.height - 0.5;
-        orbs.forEach((orb, i) => {
-          const depth = (i + 1) * 10;
-          orb.style.transform = `translate3d(${x * depth}px, ${y * depth}px, 0)`;
+        const r = hs.getBoundingClientRect();
+        const x = (e.clientX - r.left) / r.width - 0.5;
+        const y = (e.clientY - r.top) / r.height - 0.5;
+        orbs.forEach((o, i) => {
+          const d = (i + 1) * 10;
+          o.style.transform = `translate3d(${x * d}px, ${y * d}px, 0)`;
         });
         ticking = false;
       });
     });
   }
 
-  /* ── Scar line glow on proximity (desktop) ──────────────── */
-  const scarLine = $(".title-reveal__scar");
-  if (scarLine && titleSection && window.matchMedia("(pointer: fine)").matches) {
-    titleSection.addEventListener("mousemove", (e) => {
-      const rect = titleSection.getBoundingClientRect();
-      const y = (e.clientY - rect.top) / rect.height;
-      const proximity = 1 - Math.abs(y - 0.45) * 2.5;
-      scarLine.style.opacity = Math.max(0.3, Math.min(1, proximity)).toString();
-    });
-  }
-
-  /* ── Render signal bars in phase headers ─────────────────── */
-  $$(".phase__signal-bar").forEach((el) => {
-    const total = 8;
-    const filled = parseInt(el.style.getPropertyValue("--bars"), 10) || 0;
-    let html = "";
-    for (let i = 0; i < total; i++) {
-      const active = i < filled;
-      html += `<span style="
-        display:inline-block;
-        width:3px;
-        height:${4 + i * 1.2}px;
-        border-radius:1px;
-        margin-right:1px;
-        background:${active ? "var(--phase-color)" : "var(--line)"};
-        opacity:${active ? 0.7 : 0.3};
-        vertical-align:bottom;
-      "></span>`;
-    }
-    el.innerHTML = html;
-  });
-
   /* ── Init ────────────────────────────────────────────────── */
-  runBootSequence();
+  setState("gate");
+  runBoot();
 })();
