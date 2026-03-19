@@ -489,15 +489,25 @@
       resetHoldVisuals();
 
       // Check completion → finale
+      // Wait for the preview to finish its full window, then pause before transitioning
       if (state.explored.size === 6) {
+        const t = TRACKS[trackId];
+        // Calculate how long the preview plays (in ms)
+        const previewDuration = t ? (t.audio.end - t.audio.start) * 1000 : 10000;
+        const waitForPreview = Math.min(previewDuration, 20000);
+        // Let the preview play its full window, then add 2s breathing room
+        const transitionDelay = waitForPreview + 2000;
+        log("final track — waiting", transitionDelay, "ms before finale transition");
+
         setTimeout(() => {
           closePanel();
+          // 1s pause after panel closes — let the moment breathe
           setTimeout(() => {
             stopTrack();
             playCompletionSound();
             setState("finale");
-          }, 500);
-        }, 2500);
+          }, 1000);
+        }, transitionDelay);
       }
     }
 
