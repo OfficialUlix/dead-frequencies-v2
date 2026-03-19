@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Dead Frequencies</title>
+    <meta
+      name="description"
+      content="Dead Frequencies — a world and a mind breaking down like a failing signal. Six transmissions from static to silence."
+    />
+    <meta name="theme-color" content="#020304" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Inter:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+
+    <!-- ═══ ATMOSPHERIC LAYERS (persistent) ═══ -->
+    <div class="atmos" aria-hidden="true">
+      <div class="atmos__grain"></div>
+      <div class="atmos__scanline"></div>
+      <div class="atmos__vignette"></div>
+    </div>
+
+    <!-- ═══ PHASE INDICATOR (fixed, appears after gate) ═══ -->
+    <div class="signal-meter" aria-label="Signal progress" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+      <div class="signal-meter__track">
+        <div class="signal-meter__fill"></div>
+      </div>
+      <span class="signal-meter__label">-- / --</span>
+    </div>
+
+    <!-- ═══ SOUND TOGGLE (fixed, appears after gate) ═══ -->
+    <button class="sound-toggle" aria-label="Toggle sound" data-active="false">
+      <svg class="sound-toggle__icon sound-toggle__icon--off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+        <line x1="23" y1="9" x2="17" y2="15"/>
+        <line x1="17" y1="9" x2="23" y2="15"/>
+      </svg>
+      <svg class="sound-toggle__icon sound-toggle__icon--on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M11 5L6 9H2v6h4l5 4V5z"/>
+        <path d="M19.07 4.93a10 10 0 010 14.14"/>
+        <path d="M15.54 8.46a5 5 0 010 7.07"/>
+      </svg>
+    </button>
+
+    <!-- ═══════════════════════════════════════════════════════
+         GATE — Entry ritual
+         ═══════════════════════════════════════════════════════ -->
+    <section class="gate" id="gate" aria-label="Entry">
+      <div class="gate__static" aria-hidden="true"></div>
+      <div class="gate__content">
+        <div class="gate__boot" aria-live="polite">
+          <p class="gate__line" data-delay="0"><span class="gate__prompt">&gt;</span> Initialising signal decoder...</p>
+          <p class="gate__line" data-delay="600"><span class="gate__prompt">&gt;</span> Frequency: <span class="gate__val gate__val--cold">UNKNOWN</span></p>
+          <p class="gate__line" data-delay="1200"><span class="gate__prompt">&gt;</span> Source: <span class="gate__val gate__val--warm">UNVERIFIED</span></p>
+          <p class="gate__line" data-delay="1800"><span class="gate__prompt">&gt;</span> Signal integrity: <span class="gate__val gate__val--warn">DEGRADING</span></p>
+          <p class="gate__line" data-delay="2400"><span class="gate__prompt">&gt;</span> Status: <span class="gate__val gate__val--crit">UNSTABLE</span></p>
+          <p class="gate__line gate__line--ready" data-delay="3200"><span class="gate__prompt">&gt;</span> Ready to receive transmission_</p>
+        </div>
+
+        <div class="gate__actions">
+          <button class="gate__sound-choice" data-sound="off">
+            <span class="gate__sound-icon">&#9834;</span>
+            <span>Sound Off</span>
+          </button>
+          <button class="gate__sound-choice gate__sound-choice--active" data-sound="on">
+            <span class="gate__sound-icon">&#9835;</span>
+            <span>Sound On</span>
+          </button>
+        </div>
+
+        <button class="gate__enter" aria-label="Begin the experience">
+          <span class="gate__enter-border" aria-hidden="true"></span>
+          <span class="gate__enter-text">Begin Transmission</span>
+          <span class="gate__enter-sub">6 signals detected</span>
+        </button>
+
+        <p class="gate__version">DEAD FREQUENCIES // v1.0</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════════
+         EXPERIENCE — The descent
+         ═══════════════════════════════════════════════════════ -->
+    <main class="experience" id="experience" aria-label="Dead Frequencies EP experience">
+
+      <!-- ── TITLE REVEAL ── -->
+      <section class="title-reveal" aria-labelledby="ep-title">
+        <div class="title-reveal__bg" aria-hidden="true">
+          <span class="title-reveal__orb title-reveal__orb--cold"></span>
+          <span class="title-reveal__orb title-reveal__orb--warm"></span>
+        </div>
+        <div class="title-reveal__content">
+          <p class="title-reveal__meta">EP / 6 TRACKS</p>
+          <h1 class="title-reveal__heading" id="ep-title">
+            <span class="title-reveal__ghost title-reveal__ghost--far" aria-hidden="true">
+              <span>DEAD</span><span>FREQUENCIES</span>
+            </span>
+            <span class="title-reveal__ghost title-reveal__ghost--near" aria-hidden="true">
+              <span>DEAD</span><span>FREQUENCIES</span>
+            </span>
+            <span class="title-reveal__primary">
+              <span class="title-reveal__word title-reveal__word--dead">DEAD</span>
+              <span class="title-reveal__word title-reveal__word--freq">FREQUENCIES</span>
+            </span>
+            <span class="title-reveal__scar" aria-hidden="true"></span>
+          </h1>
+          <p class="title-reveal__sub">A 6-track concept EP</p>
+          <div class="title-reveal__tx">
+            <span class="title-reveal__tx-line" aria-hidden="true"></span>
+            <p class="title-reveal__tx-prefix">// signal intercept — partial decode</p>
+            <p class="title-reveal__tx-body">
+              A world and a mind breaking down<br />
+              like a failing signal.
+            </p>
+            <p class="title-reveal__tx-body title-reveal__tx-body--dim">
+              Systems collapse. Connection lost.<br />
+              Something human refuses to disappear.
+            </p>
+          </div>
+          <div class="title-reveal__scroll-cue" aria-hidden="true">
+            <span>Descend</span>
+            <div class="title-reveal__scroll-line"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── PHASE 01: STATIC SIGNALS ── -->
+      <section class="phase" data-phase="1" data-color="cold" aria-labelledby="phase-1-title">
+        <div class="phase__bg" aria-hidden="true">
+          <div class="phase__interference"></div>
+        </div>
+        <div class="phase__content">
+          <div class="phase__header">
+            <span class="phase__number">01</span>
+            <span class="phase__label">Phase: Interference</span>
+            <div class="phase__signal">
+              <span class="phase__signal-bar" style="--bars: 6"></span>
+              <span class="phase__signal-pct">78%</span>
+            </div>
+          </div>
+          <h2 class="phase__title" id="phase-1-title">Static Signals</h2>
+          <div class="phase__status">SIGNAL DETECTED</div>
+          <p class="phase__body">
+            The first glitches appear. The world feels off — systems flicker,
+            structures crack. Something beneath the surface is starting to fail.
+          </p>
+        </div>
+      </section>
+
+      <!-- ── PHASE 02: DROWN TONIGHT ── -->
+      <section class="phase" data-phase="2" data-color="warm" aria-labelledby="phase-2-title">
+        <div class="phase__bg" aria-hidden="true">
+          <div class="phase__interference"></div>
+        </div>
+        <div class="phase__content">
+          <div class="phase__header">
+            <span class="phase__number">02</span>
+            <span class="phase__label">Phase: Submersion</span>
+            <div class="phase__signal">
+              <span class="phase__signal-bar" style="--bars: 4"></span>
+              <span class="phase__signal-pct">54%</span>
+            </div>
+          </div>
+          <h2 class="phase__title" id="phase-2-title">Drown Tonight</h2>
+          <div class="phase__status">SIGNAL DEGRADING</div>
+          <p class="phase__body">
+            The collapse turns inward. Noise and pressure overwhelm
+            until breathing through the disconnection feels impossible.
+          </p>
+        </div>
+      </section>
+
+      <!-- ── PHASE 03: GHOST ── -->
+      <section class="phase" data-phase="3" data-color="ghost" aria-labelledby="phase-3-title">
+        <div class="phase__bg" aria-hidden="true">
+          <div class="phase__interference"></div>
+        </div>
+        <div class="phase__content">
+          <div class="phase__header">
+            <span class="phase__number">03</span>
+            <span class="phase__label">Phase: Fracture</span>
+            <div class="phase__signal">
+              <span class="phase__signal-bar" style="--bars: 3"></span>
+              <span class="phase__signal-pct">32%</span>
+            </div>
+          </div>
+          <h2 class="phase__title" id="phase-3-title">Ghost</h2>
+          <div class="phase__status">IDENTITY FRAGMENTED</div>
+          <p class="phase__body">
+            Still physically present, but mentally absent. Identity fractures
+            until the self becomes a ghost inside its own life.
+          </p>
+        </div>
+      </section>
+
+      <!-- ── PHASE 04: NEON GRAVES ── -->
+      <section class="phase" data-phase="4" data-color="critical" aria-labelledby="phase-4-title">
+        <div class="phase__bg" aria-hidden="true">
+          <div class="phase__interference"></div>
+        </div>
+        <div class="phase__content">
+          <div class="phase__header">
+            <span class="phase__number">04</span>
+            <span class="phase__label">Phase: Collapse</span>
+            <div class="phase__signal">
+              <span class="phase__signal-bar" style="--bars: 1"></span>
+              <span class="phase__signal-pct">08%</span>
+            </div>
+          </div>
+          <h2 class="phase__title" id="phase-4-title">Neon Graves</h2>
+          <div class="phase__status">SIGNAL LOST</div>
+          <p class="phase__body">
+            Total breakdown. Dead lights and lost signals turn the city
+            into a graveyard of everything that once felt stable.
+          </p>
+        </div>
+      </section>
+
+      <!-- ── PHASE 05: LIGHT THE FIRE ── -->
+      <section class="phase" data-phase="5" data-color="ember" aria-labelledby="phase-5-title">
+        <div class="phase__bg" aria-hidden="true">
+          <div class="phase__interference"></div>
+        </div>
+        <div class="phase__content">
+          <div class="phase__header">
+            <span class="phase__number">05</span>
+            <span class="phase__label">Phase: Defiance</span>
+            <div class="phase__signal">
+              <span class="phase__signal-bar" style="--bars: 4"></span>
+              <span class="phase__signal-pct">MANUAL</span>
+            </div>
+          </div>
+          <h2 class="phase__title" id="phase-5-title">Light The Fire</h2>
+          <div class="phase__status">SIGNAL OVERRIDE</div>
+          <p class="phase__body">
+            A moment of defiance. Instead of waiting for the system
+            to recover, the protagonist breaks free from it.
+          </p>
+        </div>
+      </section>
+
+      <!-- ── PHASE 06: WE REMAIN ── -->
+      <section class="phase" data-phase="6" data-color="resolve" aria-labelledby="phase-6-title">
+        <div class="phase__bg" aria-hidden="true">
+          <div class="phase__interference"></div>
+        </div>
+        <div class="phase__content">
+          <div class="phase__header">
+            <span class="phase__number">06</span>
+            <span class="phase__label">Phase: Survival</span>
+            <div class="phase__signal">
+              <span class="phase__signal-bar" style="--bars: 8"></span>
+              <span class="phase__signal-pct">HUMAN</span>
+            </div>
+          </div>
+          <h2 class="phase__title" id="phase-6-title">We Remain</h2>
+          <div class="phase__status">SIGNAL PERSISTS</div>
+          <p class="phase__body">
+            Silence settles after the collapse. The world is scarred
+            and broken, but something human survives — and keeps transmitting.
+          </p>
+        </div>
+      </section>
+
+      <!-- ── CORE MESSAGE ── -->
+      <section class="message" aria-label="Core message">
+        <div class="message__lines" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <blockquote class="message__quote">
+          <p class="message__text">
+            Even when everything fails —<br />
+            systems, connections, identity, stability —<br />
+            <em>the human signal doesn't disappear.</em>
+          </p>
+          <footer class="message__footer">
+            <span class="message__rule" aria-hidden="true"></span>
+            <p class="message__coda">It survives the noise.</p>
+            <p class="message__coda">It survives the silence.</p>
+          </footer>
+        </blockquote>
+      </section>
+
+      <!-- ── TRANSMISSION END ── -->
+      <section class="endscreen" aria-label="Listen to the EP">
+        <div class="endscreen__noise" aria-hidden="true"></div>
+        <div class="endscreen__content">
+          <p class="endscreen__status">TRANSMISSION COMPLETE</p>
+          <h2 class="endscreen__title">
+            <span class="endscreen__title-line">Dead</span>
+            <span class="endscreen__title-line">Frequencies</span>
+          </h2>
+          <p class="endscreen__sub">6 tracks // 2026</p>
+
+          <a
+            class="endscreen__cta"
+            href="https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing"
+            target="_blank"
+            rel="noreferrer"
+          >
+            <span class="endscreen__cta-text">Stream Now</span>
+            <span class="endscreen__cta-glitch" aria-hidden="true">Stream Now</span>
+          </a>
+
+          <nav class="endscreen__links" aria-label="External links">
+            <a
+              class="endscreen__link"
+              href="https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <span class="endscreen__link-dot"></span>
+              SoundCloud
+            </a>
+            <a class="endscreen__link" href="#experience">
+              <span class="endscreen__link-dot"></span>
+              Revisit Tracklist
+            </a>
+          </nav>
+
+          <p class="endscreen__persist">signal.persists();</p>
+        </div>
+      </section>
+
+    </main>
+
+    <script src="./src/main.js"></script>
+  </body>
+</html>
