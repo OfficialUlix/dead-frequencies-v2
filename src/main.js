@@ -15,7 +15,7 @@
   const $ = (s, c = document) => c.querySelector(s);
   const $$ = (s, c = document) => [...c.querySelectorAll(s)];
 
-  /* ── Track data ─────────────────────────────────────────── */
+  /* ── Track data — canonical SoundCloud permalinks (not short links) ── */
   const TRACKS = {
     1: {
       number: "01", title: "Static Signals",
@@ -23,7 +23,10 @@
       signal: 6, pct: "78%", color: "cold",
       body: "The first glitches appear. The world feels off — systems flicker, structures crack. Something beneath the surface is starting to fail.",
       fragment: '"the screens keep splitting / nothing holds its shape"',
-      sc: { url: "https://on.soundcloud.com/0M2XafQ1KMWYzMfd08", start: 36000, end: 49000 },
+      sc: {
+        url: "https://soundcloud.com/officialulix/ulix-static-signals-1/s-V7ug4l0qGYr",
+        start: 36000, end: 49000,
+      },
     },
     2: {
       number: "02", title: "Drown Tonight",
@@ -31,7 +34,10 @@
       signal: 4, pct: "54%", color: "warm",
       body: "The collapse turns inward. Noise and pressure overwhelm until breathing through the disconnection feels impossible.",
       fragment: '"sinking past the frequency / where voices used to reach"',
-      sc: { url: "https://on.soundcloud.com/47hmR9FlGykzXWbvGp", start: 82000, end: 100000 },
+      sc: {
+        url: "https://soundcloud.com/officialulix/ulix-drown-tonight-2/s-VYKm32cNzNZ",
+        start: 82000, end: 100000,
+      },
     },
     3: {
       number: "03", title: "Ghost",
@@ -39,7 +45,10 @@
       signal: 3, pct: "32%", color: "ghost",
       body: "Still physically present, but mentally absent. Identity fractures until the self becomes a ghost inside its own life.",
       fragment: '"i\'m standing right here / but nothing registers"',
-      sc: { url: "https://on.soundcloud.com/79abXnduus7mkZtVx7", start: 11000, end: 21000 },
+      sc: {
+        url: "https://soundcloud.com/officialulix/ulix-gitfl-3/s-wPlaj8bvz0O",
+        start: 11000, end: 21000,
+      },
     },
     4: {
       number: "04", title: "Neon Graves",
@@ -47,7 +56,10 @@
       signal: 1, pct: "08%", color: "critical",
       body: "Total breakdown. Dead lights and lost signals turn the city into a graveyard of everything that once felt stable.",
       fragment: '"every light that burned is now a monument to what we lost"',
-      sc: { url: "https://on.soundcloud.com/IB0VhjAPfOwvGjvyyo", start: 90000, end: 113000 },
+      sc: {
+        url: "https://soundcloud.com/officialulix/ulix-neon-graves-4/s-G7K5QUeuU4G",
+        start: 90000, end: 113000,
+      },
     },
     5: {
       number: "05", title: "Light The Fire",
@@ -55,7 +67,10 @@
       signal: 4, pct: "MANUAL", color: "ember",
       body: "A moment of defiance. Instead of waiting for the system to recover, the protagonist breaks free from it.",
       fragment: '"burn the protocol / override the silence"',
-      sc: { url: "https://on.soundcloud.com/GTtVUYflIbDxBsJlQ2", start: 36000, end: 49000 },
+      sc: {
+        url: "https://soundcloud.com/officialulix/ulix-light-the-fire-5/s-3vfkGU9Nx9l",
+        start: 36000, end: 49000,
+      },
     },
     6: {
       number: "06", title: "We Remain",
@@ -63,7 +78,10 @@
       signal: 8, pct: "HUMAN", color: "resolve",
       body: "Silence settles after the collapse. The world is scarred and broken, but something human survives — and keeps transmitting.",
       fragment: '"after everything / we are still here / still transmitting"',
-      sc: { url: "https://on.soundcloud.com/OodRAnjMNr8TgtZeFj", start: 101000, end: 112000 },
+      sc: {
+        url: "https://soundcloud.com/officialulix/ulix-we-remain-6/s-cVut0hn7zJA",
+        start: 101000, end: 112000,
+      },
     },
   };
 
@@ -105,30 +123,108 @@
   const panelUnlock = $("#panel-unlock");
   const panelUnlockFill = $("#panel-unlock-fill");
   const panelUnlockLabel = $("#panel-unlock-label");
+  const panelFallback = $("#panel-fallback");
+  const panelFallbackLink = $("#panel-fallback-link");
   const finaleEl = $("#finale");
 
   /* ═══════════════════════════════════════════════════════════
-     SOUNDCLOUD WIDGET ENGINE
+     SOUNDCLOUD WIDGET ENGINE — hardened async module
      ═══════════════════════════════════════════════════════════ */
-  const scWidgets = {};
-  let scInited = false;
-  let scFadeInterval = null;
-  let scStopTimer = null;
 
-  function initSCWidgets() {
-    if (scInited) return;
-    scInited = true;
+  const scEngine = {
+    apiLoaded: false,
+    apiPromise: null,
+    widgets: {},       // { [trackId]: { widget, iframe, ready, failed, readyPromise, resolveReady } }
+    fadeInterval: null,
+    stopTimer: null,
+    pendingPlay: null,  // trackId queued for play once ready
 
-    if (!window.SC || !window.SC.Widget) {
-      log("SC Widget API not available — will use fallback audio");
-      return;
-    }
-    log("SC Widget API loaded, creating widgets...");
+    /**
+     * Step 1: Ensure the SC Widget API script is loaded and SC.Widget exists.
+     * Returns a promise that resolves when window.SC.Widget is available.
+     */
+    loadWidgetAPI() {
+      if (this.apiPromise) return this.apiPromise;
 
-    const container = $("#sc-players");
-    if (!container) return;
+      this.apiPromise = new Promise((resolve) => {
+        // Check if already loaded
+        if (window.SC && window.SC.Widget) {
+          log("SC Widget API already available");
+          this.apiLoaded = true;
+          resolve(true);
+          return;
+        }
 
-    Object.entries(TRACKS).forEach(([id, t]) => {
+        // Check if the script tag exists but hasn't loaded yet
+        const existing = document.querySelector('script[src*="w.soundcloud.com/player/api.js"]');
+
+        const onLoad = () => {
+          // Poll briefly for SC.Widget — the script may define it async
+          let attempts = 0;
+          const check = () => {
+            if (window.SC && window.SC.Widget) {
+              log("SC Widget API loaded successfully");
+              this.apiLoaded = true;
+              resolve(true);
+            } else if (attempts < 50) {
+              attempts++;
+              setTimeout(check, 100);
+            } else {
+              log("SC Widget API failed to define SC.Widget after script load");
+              resolve(false);
+            }
+          };
+          check();
+        };
+
+        if (existing) {
+          // Script tag exists — might still be loading
+          if (existing.hasAttribute("data-loaded")) {
+            onLoad();
+          } else {
+            existing.addEventListener("load", () => {
+              existing.setAttribute("data-loaded", "true");
+              onLoad();
+            });
+            existing.addEventListener("error", () => {
+              log("SC Widget API script failed to load");
+              resolve(false);
+            });
+          }
+        } else {
+          // No script tag — inject one
+          const script = document.createElement("script");
+          script.src = "https://w.soundcloud.com/player/api.js";
+          script.onload = () => {
+            script.setAttribute("data-loaded", "true");
+            onLoad();
+          };
+          script.onerror = () => {
+            log("SC Widget API script injection failed");
+            resolve(false);
+          };
+          document.head.appendChild(script);
+        }
+      });
+
+      return this.apiPromise;
+    },
+
+    /**
+     * Step 2: Create widget for a specific track.
+     * Returns the widget entry with a readyPromise.
+     */
+    createWidget(trackId) {
+      const id = String(trackId);
+      if (this.widgets[id]) return this.widgets[id];
+
+      const t = TRACKS[trackId];
+      if (!t) return null;
+
+      const container = $("#sc-players");
+      if (!container) return null;
+
+      // Create iframe with canonical permalink
       const iframe = document.createElement("iframe");
       iframe.id = "sc-" + id;
       iframe.allow = "autoplay";
@@ -140,110 +236,248 @@
         "&show_comments=false&show_playcount=false&show_user=false" +
         "&hide_related=true&visual=false&single_active=false";
       container.appendChild(iframe);
+      log("iframe created: track", id, t.title);
 
+      // Create widget from iframe
       const widget = SC.Widget(iframe);
-      scWidgets[id] = { widget, ready: false, fadingOut: false };
 
+      // Build entry with a promise that resolves on READY
+      let resolveReady;
+      const readyPromise = new Promise((resolve) => {
+        resolveReady = resolve;
+      });
+
+      const entry = {
+        widget,
+        iframe,
+        ready: false,
+        failed: false,
+        fadingOut: false,
+        readyPromise,
+        resolveReady,
+      };
+
+      this.widgets[id] = entry;
+
+      // Bind READY
       widget.bind(SC.Widget.Events.READY, () => {
-        scWidgets[id].ready = true;
-        log("SC widget READY: track", id, t.title);
+        entry.ready = true;
+        log("widget READY: track", id, t.title);
+        resolveReady(true);
+
+        // If playback was queued for this track, fire it now
+        if (this.pendingPlay === trackId) {
+          this.pendingPlay = null;
+          log("executing queued playback for track", id);
+          this.playPreview(trackId);
+        }
       });
 
+      // Bind ERROR
       widget.bind(SC.Widget.Events.ERROR, () => {
-        log("SC widget ERROR: track", id);
+        log("widget ERROR: track", id, t.title);
+        entry.failed = true;
+        resolveReady(false);
       });
-    });
-  }
+
+      // Safety timeout — if READY doesn't fire in 15s, mark failed
+      setTimeout(() => {
+        if (!entry.ready && !entry.failed) {
+          log("widget TIMEOUT: track", id, "— no READY after 15s");
+          entry.failed = true;
+          resolveReady(false);
+        }
+      }, 15000);
+
+      return entry;
+    },
+
+    /**
+     * Step 3: Wait for a specific track's widget to be ready.
+     * Returns true if ready, false if failed.
+     */
+    async waitForReady(trackId) {
+      const id = String(trackId);
+      const entry = this.widgets[id];
+      if (!entry) return false;
+      if (entry.ready) return true;
+      if (entry.failed) return false;
+      return entry.readyPromise;
+    },
+
+    /**
+     * Initialize all 6 widgets after API is confirmed loaded.
+     */
+    async initAll() {
+      const apiOk = await this.loadWidgetAPI();
+      if (!apiOk) {
+        log("SC Widget API not available — all tracks will use fallback");
+        return;
+      }
+
+      log("creating widgets for all 6 tracks...");
+      for (const id of Object.keys(TRACKS)) {
+        this.createWidget(parseInt(id, 10));
+      }
+    },
+
+    /**
+     * Play preview for a track. Handles: stop others, wait for ready,
+     * seek, volume 0, play, fade in, schedule fade out at end.
+     */
+    async playPreview(trackId) {
+      if (!state.soundOn) return;
+
+      const id = String(trackId);
+      const t = TRACKS[trackId];
+      if (!t) return;
+
+      // Stop any currently playing track
+      this.stopAllPreviews();
+
+      const entry = this.widgets[id];
+      if (!entry) {
+        log("no widget for track", id, "— fallback");
+        playNodeSound(trackId);
+        showFallback(trackId);
+        return;
+      }
+
+      // If not ready yet, queue playback (will fire when READY arrives)
+      if (!entry.ready) {
+        if (entry.failed) {
+          log("widget failed for track", id, "— fallback");
+          playNodeSound(trackId);
+          showFallback(trackId);
+          return;
+        }
+        log("widget not ready yet for track", id, "— queuing playback");
+        this.pendingPlay = trackId;
+        return;
+      }
+
+      log("playPreview: track", id, t.title, "from", t.sc.start, "to", t.sc.end);
+      state.activeTrack = trackId;
+      entry.fadingOut = false;
+
+      try {
+        entry.widget.setVolume(0);
+        log("setVolume(0) called: track", id);
+
+        entry.widget.seekTo(t.sc.start);
+        log("seekTo called:", t.sc.start, "track", id);
+
+        entry.widget.play();
+        log("play() called: track", id);
+      } catch (e) {
+        log("playPreview error:", e.message, "track", id);
+        playNodeSound(trackId);
+        showFallback(trackId);
+        return;
+      }
+
+      // Fade in volume over ~500ms
+      let vol = 0;
+      clearInterval(this.fadeInterval);
+      log("volume fade-in started: track", id);
+      this.fadeInterval = setInterval(() => {
+        vol = Math.min(vol + 5, 100);
+        try { entry.widget.setVolume(vol); } catch (e) { /* ignore */ }
+        if (vol >= 100) {
+          clearInterval(this.fadeInterval);
+          log("volume fade-in complete: track", id);
+        }
+      }, 25);
+
+      // Schedule fade-out before end timestamp
+      const clipLen = t.sc.end - t.sc.start;
+      const maxDuration = 20000;
+      const playDuration = Math.min(clipLen, maxDuration);
+      const fadeOutAt = Math.max(playDuration - 800, 0);
+
+      clearTimeout(this.stopTimer);
+      this.stopTimer = setTimeout(() => {
+        log("stop timer fired: track", id);
+        this.stopPreview(trackId);
+      }, fadeOutAt);
+    },
+
+    /**
+     * Fade out and stop a specific track.
+     */
+    stopPreview(trackId) {
+      const id = String(trackId);
+      const entry = this.widgets[id];
+      if (!entry || !entry.ready) return;
+      if (entry.fadingOut) return;
+      entry.fadingOut = true;
+
+      clearInterval(this.fadeInterval);
+      clearTimeout(this.stopTimer);
+
+      log("fade-out started: track", id);
+      let vol = 100;
+      this.fadeInterval = setInterval(() => {
+        vol = Math.max(vol - 5, 0);
+        try { entry.widget.setVolume(vol); } catch (e) { /* ignore */ }
+        if (vol <= 0) {
+          clearInterval(this.fadeInterval);
+          try { entry.widget.pause(); } catch (e) { /* ignore */ }
+          if (state.activeTrack === trackId) state.activeTrack = null;
+          log("fade-out complete, paused: track", id);
+        }
+      }, 25);
+    },
+
+    /**
+     * Immediately stop all previews.
+     */
+    stopAllPreviews() {
+      clearTimeout(this.stopTimer);
+      clearInterval(this.fadeInterval);
+      this.pendingPlay = null;
+
+      if (state.activeTrack !== null) {
+        const id = String(state.activeTrack);
+        const entry = this.widgets[id];
+        if (entry && entry.ready) {
+          try {
+            entry.widget.setVolume(0);
+            entry.widget.pause();
+          } catch (e) { /* ignore */ }
+        }
+        log("stopped active track:", id);
+        state.activeTrack = null;
+      }
+    },
+
+    /**
+     * Check if a track's widget is in a usable state.
+     */
+    isTrackReady(trackId) {
+      const entry = this.widgets[String(trackId)];
+      return entry ? entry.ready : false;
+    },
+
+    isTrackFailed(trackId) {
+      const entry = this.widgets[String(trackId)];
+      return entry ? entry.failed : false;
+    },
+  };
 
   /**
-   * Play a SC track. Call within user gesture (pointerdown) for mobile.
-   * Starts muted, seeks to start, then fades in.
+   * Show fallback UI inside the panel for a track whose widget failed.
    */
-  function playSCTrack(trackId) {
-    stopSCTrack();
-
-    const key = String(trackId);
-    const w = scWidgets[key];
-    if (!w || !w.ready) {
-      log("SC widget not ready for track", trackId, "— using fallback");
-      playNodeSound(trackId);
-      return;
-    }
-    if (!state.soundOn) return;
-
+  function showFallback(trackId) {
     const t = TRACKS[trackId];
-    log("Playing SC track", trackId, t.title, "from", t.sc.start, "to", t.sc.end);
-
-    state.activeTrack = trackId;
-    w.fadingOut = false;
-
-    // Start muted within user gesture, then seek + fade in
-    w.widget.setVolume(0);
-    w.widget.seekTo(t.sc.start);
-    w.widget.play();
-
-    // Fade in over ~500ms
-    let vol = 0;
-    clearInterval(scFadeInterval);
-    scFadeInterval = setInterval(() => {
-      vol = Math.min(vol + 5, 100);
-      try { w.widget.setVolume(vol); } catch (e) {}
-      if (vol >= 100) {
-        clearInterval(scFadeInterval);
-        log("SC fade-in complete, track", trackId);
-      }
-    }, 25);
-
-    // Schedule fade-out before end
-    const clipLen = t.sc.end - t.sc.start;
-    const maxDuration = 20000; // 20s safety cap
-    const playDuration = Math.min(clipLen, maxDuration);
-    const fadeOutAt = Math.max(playDuration - 800, 0);
-
-    clearTimeout(scStopTimer);
-    scStopTimer = setTimeout(() => {
-      log("SC auto-fadeout at end, track", trackId);
-      fadeSCOut(trackId);
-    }, fadeOutAt);
+    if (!t || !panelFallback || !panelFallbackLink) return;
+    panelFallbackLink.href = t.sc.url;
+    panelFallback.removeAttribute("hidden");
+    log("fallback shown for track", trackId);
   }
 
-  function fadeSCOut(trackId) {
-    const key = String(trackId);
-    const w = scWidgets[key];
-    if (!w) return;
-    if (w.fadingOut) return;
-    w.fadingOut = true;
-
-    clearInterval(scFadeInterval);
-    clearTimeout(scStopTimer);
-
-    let vol = 100;
-    scFadeInterval = setInterval(() => {
-      vol = Math.max(vol - 5, 0);
-      try { w.widget.setVolume(vol); } catch (e) {}
-      if (vol <= 0) {
-        clearInterval(scFadeInterval);
-        try { w.widget.pause(); } catch (e) {}
-        if (state.activeTrack === trackId) state.activeTrack = null;
-        log("SC fade-out complete, track", trackId);
-      }
-    }, 25);
-  }
-
-  function stopSCTrack() {
-    clearTimeout(scStopTimer);
-    clearInterval(scFadeInterval);
-    if (state.activeTrack !== null) {
-      const key = String(state.activeTrack);
-      const w = scWidgets[key];
-      if (w && w.ready) {
-        try {
-          w.widget.setVolume(0);
-          w.widget.pause();
-        } catch (e) {}
-      }
-      state.activeTrack = null;
-    }
+  function hideFallback() {
+    if (panelFallback) panelFallback.setAttribute("hidden", "");
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -275,7 +509,7 @@
       g.connect(actx.destination);
       osc.start();
       osc.stop(actx.currentTime + 1.5);
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
 
   function playCompletionSound() {
@@ -294,7 +528,7 @@
         osc.start(actx.currentTime + i * 0.15);
         osc.stop(actx.currentTime + 3.5);
       });
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
 
   function playHoldTick() {
@@ -310,7 +544,7 @@
       g.connect(actx.destination);
       osc.start();
       osc.stop(actx.currentTime + 0.2);
-    } catch (e) {}
+    } catch (e) { /* ignore */ }
   }
 
   /* ── State Machine ──────────────────────────────────────── */
@@ -323,10 +557,11 @@
     }
     if (name === "sigmap") {
       showTitleFlash();
-      initSCWidgets();
+      // Kick off SC engine — fully async, does not block UI
+      scEngine.initAll();
     }
     if (name === "finale") {
-      stopSCTrack();
+      scEngine.stopAllPreviews();
     }
   }
 
@@ -448,7 +683,7 @@
     /* ── Panel unlock — decode fragment + play audio ──── */
     else if (holdContext === "unlock") {
       const trackId = state.panelTrackId;
-      log("Unlock complete for track", trackId);
+      log("unlock complete for track", trackId);
 
       // Mark decoded
       if (trackId && !state.explored.has(trackId)) {
@@ -475,8 +710,11 @@
         panelUnlockLabel.textContent = "Signal Unlocked";
       }
 
-      // Play SC audio (this is within the rAF chain from pointerdown — user gesture)
-      if (trackId) playSCTrack(trackId);
+      // Play SC audio — async, handles queuing if widget not ready
+      if (trackId) {
+        log("unlock triggered playback for track", trackId);
+        scEngine.playPreview(trackId);
+      }
 
       resetHoldVisuals();
 
@@ -485,7 +723,7 @@
         setTimeout(() => {
           closePanel();
           setTimeout(() => {
-            stopSCTrack();
+            scEngine.stopAllPreviews();
             playCompletionSound();
             setState("finale");
           }, 500);
@@ -571,6 +809,9 @@
     const t = TRACKS[trackId];
     if (!t) return;
 
+    // Stop any playing preview when opening a new panel
+    scEngine.stopAllPreviews();
+
     state.panelTrackId = trackId;
 
     panel.style.setProperty(
@@ -620,6 +861,12 @@
       panelUnlockLabel.textContent = isDecoded
         ? "Signal Unlocked"
         : "Hold to Unlock Signal";
+    }
+
+    // Show/hide fallback based on widget state
+    hideFallback();
+    if (scEngine.isTrackFailed(trackId)) {
+      showFallback(trackId);
     }
 
     panel.classList.add("is-open");
@@ -712,7 +959,7 @@
   soundBtn.addEventListener("click", () => {
     state.soundOn = !state.soundOn;
     soundBtn.setAttribute("data-active", String(state.soundOn));
-    if (!state.soundOn) stopSCTrack();
+    if (!state.soundOn) scEngine.stopAllPreviews();
   });
 
   /* ── Finale Hold-to-Stabilise ───────────────────────────── */

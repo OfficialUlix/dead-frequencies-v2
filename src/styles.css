@@ -582,6 +582,22 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 .panel__unlock.is-holding .panel__unlock-label { color: var(--cold); }
 .panel__unlock.is-unlocked .panel__unlock-label { color: var(--phase-color); }
 
+/* SC fallback — shown when widget fails */
+.panel__fallback {
+  display: flex; align-items: center; gap: 0.6rem;
+  margin-top: 0.6rem; padding: 0.5rem 0.8rem;
+  border: 1px dashed rgba(255,255,255,0.1); border-radius: 3px;
+  font-family: var(--mono); font-size: 0.52rem;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.panel__fallback[hidden] { display: none; }
+.panel__fallback-text { color: var(--text-faint); }
+.panel__fallback-link {
+  color: var(--cold); text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.panel__fallback-link:hover { color: var(--text); }
+
 /* ═══════════════════════════════════════════════════════════
    FINALE
    ═══════════════════════════════════════════════════════════ */
