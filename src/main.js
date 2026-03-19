@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
    DEAD FREQUENCIES — Transmission Experience Engine
-   State Machine: gate → handshake → sigmap → (panel) → finale
+   State Machine: gate → sigmap → (panel) → finale
+   Core Mechanic: HOLD TO STABILISE
    ═══════════════════════════════════════════════════════════════ */
 
 (function () {
@@ -60,21 +61,35 @@
     soundOn: true,
     explored: new Set(),
     panelOpen: false,
+    currentState: "gate",
+    holding: false,
+    finaleStabilised: false,
   };
 
   /* ── DOM ────────────────────────────────────────────────── */
   const html = document.documentElement;
   const gateLines = $$(".gate__line");
   const gateControls = $(".gate__controls");
-  const gateEnterBtn = $(".gate__enter");
+  const gateHoldZone = $("#gate-hold");
+  const gateProgress = $(".gate__hold-progress");
   const gateSndBtns = $$(".gate__snd");
   const soundBtn = $(".sound-btn");
-  const handshakeProceed = $(".handshake__proceed");
   const nodes = $$(".node");
   const panel = $("#panel");
   const panelClose = $(".panel__close");
   const decodedCount = $("#decoded-count");
+  const integrityFill = $("#integrity-fill");
+  const integrityPct = $("#integrity-pct");
+  const titleFlash = $("#title-flash");
+  const holdIndicator = $("#hold-indicator");
+  const holdIndicatorFill = $(".hold-indicator__fill");
+  const holdIndicatorLabel = $(".hold-indicator__label");
   const revisitBtn = $("#revisit-btn");
+  const finaleQuote = $(".finale__quote");
+  const finalePrompt = $(".finale__signal-prompt");
+  const finaleCta = $(".finale__cta-block");
+  const panelFragment = $("#panel-fragment");
+  const panelDecodeHint = $(".panel__decode-hint");
 
   /* ── Audio Engine ───────────────────────────────────────── */
   let actx = null;
@@ -83,6 +98,7 @@
   let droneOsc2 = null;
   let noiseGain = null;
   let noiseSource = null;
+  let noiseLPF = null;
 
   function initAudio() {
     if (actx) return;
@@ -129,7 +145,7 @@
       noiseSource.buffer = noiseBuf;
       noiseSource.loop = true;
 
-      const noiseLPF = actx.createBiquadFilter();
+      noiseLPF = actx.createBiquadFilter();
       noiseLPF.type = "lowpass";
       noiseLPF.frequency.setValueAtTime(200, actx.currentTime);
       noiseLPF.Q.setValueAtTime(0.5, actx.currentTime);
@@ -141,9 +157,7 @@
       noiseLPF.connect(noiseGain);
       noiseGain.connect(masterGain);
       noiseSource.start();
-
     } catch (e) {
-      // Audio not available — degrade gracefully
       actx = null;
     }
   }
@@ -155,10 +169,39 @@
     masterGain.gain.linearRampToValueAtTime(vol, actx.currentTime + dur);
   }
 
+  /* Audio reacts to hold — clean up on hold, degrade on release */
+  function audioStabilise(isHolding) {
+    if (!actx || !state.soundOn) return;
+    if (isHolding) {
+      // Clean: raise filter, reduce noise, soften drones
+      if (noiseLPF) {
+        noiseLPF.frequency.cancelScheduledValues(actx.currentTime);
+        noiseLPF.frequency.setValueAtTime(noiseLPF.frequency.value, actx.currentTime);
+        noiseLPF.frequency.linearRampToValueAtTime(80, actx.currentTime + 0.5);
+      }
+      if (noiseGain) {
+        noiseGain.gain.cancelScheduledValues(actx.currentTime);
+        noiseGain.gain.setValueAtTime(noiseGain.gain.value, actx.currentTime);
+        noiseGain.gain.linearRampToValueAtTime(0.04, actx.currentTime + 0.5);
+      }
+    } else {
+      // Degrade back
+      if (noiseLPF) {
+        noiseLPF.frequency.cancelScheduledValues(actx.currentTime);
+        noiseLPF.frequency.setValueAtTime(noiseLPF.frequency.value, actx.currentTime);
+        noiseLPF.frequency.linearRampToValueAtTime(200, actx.currentTime + 1);
+      }
+      if (noiseGain) {
+        noiseGain.gain.cancelScheduledValues(actx.currentTime);
+        noiseGain.gain.setValueAtTime(noiseGain.gain.value, actx.currentTime);
+        noiseGain.gain.linearRampToValueAtTime(0.15, actx.currentTime + 1);
+      }
+    }
+  }
+
   function playNodeSound(trackNum) {
     if (!actx || !state.soundOn) return;
     try {
-      // Short tonal ping matching the track's emotional register
       const freqMap = { 1: 440, 2: 330, 3: 294, 4: 220, 5: 392, 6: 523 };
       const osc = actx.createOscillator();
       osc.type = "sine";
@@ -179,7 +222,6 @@
   function playCompletionSound() {
     if (!actx || !state.soundOn) return;
     try {
-      // Resolved chord — C major spread
       [262, 330, 392, 523].forEach((freq, i) => {
         const osc = actx.createOscillator();
         osc.type = "sine";
@@ -196,13 +238,47 @@
     } catch (e) { /* silent fail */ }
   }
 
+  function playHoldTick() {
+    if (!actx || !state.soundOn) return;
+    try {
+      const osc = actx.createOscillator();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, actx.currentTime);
+      const g = actx.createGain();
+      g.gain.setValueAtTime(0.03, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.15);
+      osc.connect(g);
+      g.connect(actx.destination);
+      osc.start();
+      osc.stop(actx.currentTime + 0.2);
+    } catch (e) { /* silent fail */ }
+  }
+
   /* ── State Machine ──────────────────────────────────────── */
   function setState(name) {
+    state.currentState = name;
     html.dataset.state = name;
 
-    if (name === "handshake" || name === "sigmap" || name === "finale") {
+    if (name === "sigmap" || name === "finale") {
       soundBtn.classList.add("is-visible");
     }
+
+    if (name === "sigmap") {
+      showTitleFlash();
+    }
+  }
+
+  /* ── Title Flash (on map entry) ─────────────────────────── */
+  function showTitleFlash() {
+    if (!titleFlash) return;
+    titleFlash.classList.add("is-showing");
+    setTimeout(() => {
+      titleFlash.classList.remove("is-showing");
+      titleFlash.classList.add("is-fading");
+    }, 1800);
+    setTimeout(() => {
+      titleFlash.classList.remove("is-fading");
+    }, 4000);
   }
 
   /* ── Gate Boot ──────────────────────────────────────────── */
@@ -224,23 +300,194 @@
     });
   });
 
-  /* ── Gate Enter ─────────────────────────────────────────── */
-  gateEnterBtn.addEventListener("click", () => {
-    if (state.soundOn) {
-      initAudio();
-      if (actx && actx.state === "suspended") actx.resume();
-      fadeAudio(0.25, 3);
-      soundBtn.setAttribute("data-active", "true");
+  /* ── Hold Engine ────────────────────────────────────────── */
+  const GATE_HOLD_TIME = 1500; // ms to hold for gate entry
+  const PANEL_HOLD_TIME = 1200; // ms to hold for panel decode
+  const FINALE_HOLD_TIME = 2000; // ms to hold for finale stabilise
+
+  let holdTimer = null;
+  let holdStart = 0;
+  let holdRaf = null;
+  let holdContext = null; // "gate" | "panel" | "finale"
+
+  function setHolding(isHolding) {
+    state.holding = isHolding;
+    html.dataset.holding = String(isHolding);
+    if (panel.classList.contains("is-open")) {
+      panel.dataset.holding = String(isHolding);
     }
-    setState("handshake");
+    if (state.currentState === "finale") {
+      $("#finale").dataset.holding = String(isHolding);
+    }
+    audioStabilise(isHolding);
+  }
+
+  function startHold(context, e) {
+    if (holdTimer) return;
+    holdContext = context;
+    holdStart = performance.now();
+    setHolding(true);
+    playHoldTick();
+
+    // Show hold indicator for panel/finale
+    if (context === "panel" || context === "finale") {
+      holdIndicator.classList.add("is-visible");
+      holdIndicatorLabel.textContent =
+        context === "panel" ? "Hold to decode" : "Hold to stabilise";
+    }
+
+    // Gate progress bar
+    if (context === "gate" && gateHoldZone) {
+      gateHoldZone.classList.add("is-holding");
+    }
+
+    // Start progress animation
+    holdRaf = requestAnimationFrame(updateHoldProgress);
+  }
+
+  function updateHoldProgress() {
+    const elapsed = performance.now() - holdStart;
+    let duration;
+    if (holdContext === "gate") duration = GATE_HOLD_TIME;
+    else if (holdContext === "panel") duration = PANEL_HOLD_TIME;
+    else duration = FINALE_HOLD_TIME;
+
+    const progress = Math.min(elapsed / duration, 1);
+
+    // Update visuals
+    if (holdContext === "gate" && gateProgress) {
+      gateProgress.style.width = (progress * 100) + "%";
+    }
+
+    // Hold indicator ring (panel/finale)
+    if ((holdContext === "panel" || holdContext === "finale") && holdIndicatorFill) {
+      const circumference = 169.65; // 2 * PI * 27
+      holdIndicatorFill.style.strokeDashoffset = String(circumference * (1 - progress));
+    }
+
+    if (progress >= 1) {
+      completeHold();
+      return;
+    }
+
+    holdRaf = requestAnimationFrame(updateHoldProgress);
+  }
+
+  function completeHold() {
+    cancelAnimationFrame(holdRaf);
+    holdRaf = null;
+
+    if (holdContext === "gate") {
+      // Enter the signal map
+      if (state.soundOn) {
+        initAudio();
+        if (actx && actx.state === "suspended") actx.resume();
+        fadeAudio(0.25, 3);
+        soundBtn.setAttribute("data-active", "true");
+      }
+      setState("sigmap");
+      resetHoldVisuals();
+    } else if (holdContext === "panel") {
+      // Decode the fragment — make it permanently stable
+      if (panelFragment) {
+        panelFragment.classList.remove("corrupted");
+        panelFragment.classList.add("is-stable");
+      }
+      if (panelDecodeHint) {
+        panelDecodeHint.classList.add("is-hidden");
+      }
+      resetHoldVisuals();
+    } else if (holdContext === "finale") {
+      // Stabilise finale quote, reveal CTA
+      if (!state.finaleStabilised) {
+        state.finaleStabilised = true;
+        if (finaleQuote) {
+          finaleQuote.classList.remove("corrupted");
+          finaleQuote.classList.add("is-stable");
+        }
+        if (finalePrompt) {
+          finalePrompt.classList.add("is-hidden");
+        }
+        setTimeout(() => {
+          if (finaleCta) finaleCta.classList.add("is-revealed");
+        }, 800);
+      }
+      resetHoldVisuals();
+    }
+
+    holdContext = null;
+  }
+
+  function cancelHold() {
+    if (holdRaf) cancelAnimationFrame(holdRaf);
+    holdRaf = null;
+    holdTimer = null;
+    setHolding(false);
+    resetHoldVisuals();
+    holdContext = null;
+  }
+
+  function resetHoldVisuals() {
+    // Gate
+    if (gateProgress) gateProgress.style.width = "0%";
+    if (gateHoldZone) gateHoldZone.classList.remove("is-holding");
+
+    // Hold indicator
+    holdIndicator.classList.remove("is-visible");
+    if (holdIndicatorFill) holdIndicatorFill.style.strokeDashoffset = "169.65";
+
+    setHolding(false);
+  }
+
+  /* ── Gate Hold Zone ─────────────────────────────────────── */
+  if (gateHoldZone) {
+    gateHoldZone.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      startHold("gate", e);
+    });
+    gateHoldZone.addEventListener("pointerup", cancelHold);
+    gateHoldZone.addEventListener("pointercancel", cancelHold);
+    gateHoldZone.addEventListener("pointerleave", cancelHold);
+    // Prevent context menu on long press
+    gateHoldZone.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
+  /* ── Panel Hold-to-Decode ───────────────────────────────── */
+  panel.addEventListener("pointerdown", (e) => {
+    if (!state.panelOpen) return;
+    // Don't trigger hold on close button
+    if (e.target.closest(".panel__close")) return;
+    e.preventDefault();
+    startHold("panel", e);
+  });
+  panel.addEventListener("pointerup", () => {
+    if (holdContext === "panel") cancelHold();
+  });
+  panel.addEventListener("pointercancel", () => {
+    if (holdContext === "panel") cancelHold();
+  });
+  panel.addEventListener("contextmenu", (e) => {
+    if (state.panelOpen) e.preventDefault();
   });
 
-  /* ── Handshake → Signal Map ─────────────────────────────── */
-  handshakeProceed.addEventListener("click", () => {
-    setState("sigmap");
+  /* ── Finale Hold-to-Stabilise ───────────────────────────── */
+  const finaleEl = $("#finale");
+  finaleEl.addEventListener("pointerdown", (e) => {
+    if (state.currentState !== "finale" || state.finaleStabilised) return;
+    e.preventDefault();
+    startHold("finale", e);
+  });
+  finaleEl.addEventListener("pointerup", () => {
+    if (holdContext === "finale") cancelHold();
+  });
+  finaleEl.addEventListener("pointercancel", () => {
+    if (holdContext === "finale") cancelHold();
+  });
+  finaleEl.addEventListener("contextmenu", (e) => {
+    if (state.currentState === "finale") e.preventDefault();
   });
 
-  /* ── Sound Toggle (persistent) ──────────────────────────── */
+  /* ── Sound Toggle ───────────────────────────────────────── */
   soundBtn.addEventListener("click", () => {
     state.soundOn = !state.soundOn;
     soundBtn.setAttribute("data-active", String(state.soundOn));
@@ -278,6 +525,15 @@
     $("#panel-body").textContent = t.body;
     $("#panel-fragment").textContent = t.fragment;
 
+    // Reset fragment to corrupted state
+    if (panelFragment) {
+      panelFragment.classList.add("corrupted");
+      panelFragment.classList.remove("is-stable");
+    }
+    if (panelDecodeHint) {
+      panelDecodeHint.classList.remove("is-hidden");
+    }
+
     // Signal bars
     renderBars($("#panel-bars"), t.signal, t.color);
 
@@ -294,6 +550,9 @@
       const count = state.explored.size;
       decodedCount.textContent = String(count);
       html.dataset.explored = String(count);
+
+      // Update integrity meter
+      updateIntegrity(count);
 
       // Audio feedback
       playNodeSound(trackId);
@@ -315,13 +574,15 @@
   function closePanel() {
     panel.classList.remove("is-open");
     panel.setAttribute("aria-hidden", "true");
+    panel.dataset.holding = "false";
     state.panelOpen = false;
+    // Cancel any active hold
+    if (holdContext === "panel") cancelHold();
   }
 
   panelClose.addEventListener("click", closePanel);
   $(".panel__backdrop").addEventListener("click", closePanel);
 
-  // Escape key
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && state.panelOpen) closePanel();
   });
@@ -330,10 +591,10 @@
   function renderBars(container, filled, color) {
     const total = 8;
     const colorVar = color === "ghost" ? "var(--ghost-c)" : `var(--${color})`;
-    let html = "";
+    let out = "";
     for (let i = 0; i < total; i++) {
       const on = i < filled;
-      html += `<span style="
+      out += `<span style="
         display:inline-block; width:3px; height:${3 + i * 1.1}px;
         border-radius:1px; margin-right:1px;
         background:${on ? colorVar : "var(--line)"};
@@ -341,53 +602,35 @@
         vertical-align:bottom;
       "></span>`;
     }
-    container.innerHTML = html;
+    container.innerHTML = out;
+  }
+
+  /* ── Signal integrity meter ─────────────────────────────── */
+  function updateIntegrity(explored) {
+    // Integrity degrades as more nodes are explored (except track 6 restores)
+    const integrityMap = {
+      0: { pct: 100, color: "var(--cold)" },
+      1: { pct: 78, color: "var(--cold)" },
+      2: { pct: 54, color: "var(--warm)" },
+      3: { pct: 32, color: "var(--ghost-c)" },
+      4: { pct: 8, color: "var(--critical)" },
+      5: { pct: 42, color: "var(--ember)" },
+      6: { pct: 100, color: "var(--resolve)" },
+    };
+    const info = integrityMap[explored] || integrityMap[0];
+    if (integrityFill) {
+      integrityFill.style.width = info.pct + "%";
+      integrityFill.style.backgroundColor = info.color;
+    }
+    if (integrityPct) {
+      integrityPct.textContent = info.pct + "%";
+    }
   }
 
   /* ── Revisit button (finale → sigmap) ───────────────────── */
   if (revisitBtn) {
     revisitBtn.addEventListener("click", () => {
       setState("sigmap");
-    });
-  }
-
-  /* ── Title micro-glitch (handshake) ─────────────────────── */
-  const titlePrimary = $(".handshake__primary");
-  if (titlePrimary) {
-    (function glitch() {
-      if (html.dataset.state !== "handshake") {
-        return setTimeout(glitch, 2000);
-      }
-      const dx = (Math.random() - 0.5) * 3;
-      const dy = (Math.random() - 0.5) * 1.5;
-      titlePrimary.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
-      titlePrimary.style.opacity = String(0.82 + Math.random() * 0.18);
-      setTimeout(() => {
-        titlePrimary.style.transform = "";
-        titlePrimary.style.opacity = "";
-      }, 50 + Math.random() * 70);
-      setTimeout(glitch, 3500 + Math.random() * 5000);
-    })();
-  }
-
-  /* ── Parallax on handshake orbs (desktop) ───────────────── */
-  const hs = $(".handshake");
-  const orbs = $$(".handshake__orb");
-  if (hs && orbs.length && window.matchMedia("(pointer: fine)").matches) {
-    let ticking = false;
-    hs.addEventListener("mousemove", (e) => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(() => {
-        const r = hs.getBoundingClientRect();
-        const x = (e.clientX - r.left) / r.width - 0.5;
-        const y = (e.clientY - r.top) / r.height - 0.5;
-        orbs.forEach((o, i) => {
-          const d = (i + 1) * 10;
-          o.style.transform = `translate3d(${x * d}px, ${y * d}px, 0)`;
-        });
-        ticking = false;
-      });
     });
   }
 

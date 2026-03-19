@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-state="gate" data-explored="0">
+<html lang="en" data-state="gate" data-explored="0" data-holding="false">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -13,7 +13,7 @@
   </head>
   <body>
 
-    <!-- ═══ ATMOSPHERE — persistent layers ═══ -->
+    <!-- ═══ ATMOSPHERE ═══ -->
     <div class="atmos" aria-hidden="true">
       <div class="atmos__grain"></div>
       <div class="atmos__scanline"></div>
@@ -21,11 +21,20 @@
       <div class="atmos__glow"></div>
     </div>
 
-    <!-- ═══ SOUND TOGGLE — persistent after gate ═══ -->
+    <!-- ═══ SOUND TOGGLE ═══ -->
     <button class="sound-btn" aria-label="Toggle sound" data-active="false">
       <svg class="sound-btn__off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
       <svg class="sound-btn__on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
     </button>
+
+    <!-- ═══ HOLD INDICATOR — appears contextually ═══ -->
+    <div class="hold-indicator" id="hold-indicator" aria-hidden="true">
+      <svg class="hold-indicator__ring" viewBox="0 0 60 60">
+        <circle cx="30" cy="30" r="27" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1.5"/>
+        <circle class="hold-indicator__fill" cx="30" cy="30" r="27" fill="none" stroke="var(--cold)" stroke-width="1.5" stroke-dasharray="169.65" stroke-dashoffset="169.65" stroke-linecap="round" transform="rotate(-90 30 30)"/>
+      </svg>
+      <span class="hold-indicator__label">Hold to stabilise</span>
+    </div>
 
     <!-- ═══════════════════════════════════════════
          GATE — Entry ritual
@@ -48,11 +57,13 @@
             <button class="gate__snd gate__snd--active" data-sound="on"><span>&#9835;</span> Sound On</button>
           </div>
 
-          <button class="gate__enter">
+          <!-- HOLD to begin — not click -->
+          <div class="gate__hold-zone" id="gate-hold">
             <span class="gate__enter-border" aria-hidden="true"></span>
-            <span class="gate__enter-label">Begin Transmission</span>
+            <span class="gate__enter-label">Hold to Begin Transmission</span>
             <span class="gate__enter-sub">6 signals detected</span>
-          </button>
+            <div class="gate__hold-progress" aria-hidden="true"></div>
+          </div>
         </div>
 
         <p class="gate__ver">DEAD FREQUENCIES // v1.0</p>
@@ -60,85 +71,70 @@
     </section>
 
     <!-- ═══════════════════════════════════════════
-         HANDSHAKE — Title reveal after gate
-         ═══════════════════════════════════════════ -->
-    <section class="handshake" id="handshake">
-      <div class="handshake__bg" aria-hidden="true">
-        <span class="handshake__orb handshake__orb--cold"></span>
-        <span class="handshake__orb handshake__orb--warm"></span>
-      </div>
-      <div class="handshake__content">
-        <p class="handshake__meta">// signal intercept — partial decode</p>
-        <h1 class="handshake__title" id="ep-title">
-          <span class="handshake__ghost handshake__ghost--far" aria-hidden="true">DEAD<br>FREQUENCIES</span>
-          <span class="handshake__ghost handshake__ghost--near" aria-hidden="true">DEAD<br>FREQUENCIES</span>
-          <span class="handshake__primary">
-            <span class="handshake__word handshake__word--dead">DEAD</span>
-            <span class="handshake__word handshake__word--freq">FREQUENCIES</span>
-          </span>
-          <span class="handshake__scar" aria-hidden="true"></span>
-        </h1>
-        <p class="handshake__sub">A world and a mind breaking down like a failing signal.</p>
-        <button class="handshake__proceed">
-          <span>Explore the Signal</span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
-        </button>
-      </div>
-    </section>
-
-    <!-- ═══════════════════════════════════════════
          SIGNAL MAP — The 6 tracks as explorable nodes
          ═══════════════════════════════════════════ -->
     <section class="sigmap" id="sigmap" aria-label="Signal map — explore 6 transmissions">
+      <!-- Title overlay — appears once on entry, then fades -->
+      <div class="sigmap__title-flash" id="title-flash" aria-hidden="true">
+        <span class="sigmap__title-ghost sigmap__title-ghost--far">DEAD FREQUENCIES</span>
+        <span class="sigmap__title-ghost sigmap__title-ghost--near">DEAD FREQUENCIES</span>
+        <span class="sigmap__title-primary">DEAD FREQUENCIES</span>
+      </div>
+
       <div class="sigmap__field">
-        <!-- Grid lines -->
         <div class="sigmap__grid" aria-hidden="true"></div>
 
-        <!-- Center pulse -->
         <div class="sigmap__core" aria-hidden="true">
           <span class="sigmap__core-ring"></span>
           <span class="sigmap__core-ring sigmap__core-ring--2"></span>
           <span class="sigmap__core-dot"></span>
         </div>
 
-        <!-- Progress readout -->
         <div class="sigmap__hud">
           <span class="sigmap__hud-label">SIGNALS DECODED</span>
           <span class="sigmap__hud-count"><span id="decoded-count">0</span> / 6</span>
         </div>
 
+        <div class="sigmap__integrity">
+          <span class="sigmap__integrity-label">SIGNAL INTEGRITY</span>
+          <div class="sigmap__integrity-bar">
+            <div class="sigmap__integrity-fill" id="integrity-fill"></div>
+          </div>
+          <span class="sigmap__integrity-pct" id="integrity-pct">100%</span>
+        </div>
+
         <!-- 6 Nodes -->
-        <button class="node" data-track="1" data-color="cold" aria-label="Static Signals — tap to decode" style="--node-x: 25%; --node-y: 18%;">
+        <button class="node" data-track="1" data-color="cold" aria-label="Signal 01 — tap to decode" style="--node-x: 25%; --node-y: 18%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">01</span>
         </button>
 
-        <button class="node" data-track="2" data-color="warm" aria-label="Drown Tonight — tap to decode" style="--node-x: 72%; --node-y: 24%;">
+        <button class="node" data-track="2" data-color="warm" aria-label="Signal 02 — tap to decode" style="--node-x: 72%; --node-y: 24%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">02</span>
         </button>
 
-        <button class="node" data-track="3" data-color="ghost" aria-label="Ghost — tap to decode" style="--node-x: 15%; --node-y: 50%;">
+        <button class="node" data-track="3" data-color="ghost" aria-label="Signal 03 — tap to decode" style="--node-x: 15%; --node-y: 50%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">03</span>
         </button>
 
-        <button class="node" data-track="4" data-color="critical" aria-label="Neon Graves — tap to decode" style="--node-x: 80%; --node-y: 55%;">
+        <button class="node" data-track="4" data-color="critical" aria-label="Signal 04 — tap to decode" style="--node-x: 80%; --node-y: 55%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">04</span>
         </button>
 
-        <button class="node" data-track="5" data-color="ember" aria-label="Light The Fire — tap to decode" style="--node-x: 30%; --node-y: 78%;">
+        <button class="node" data-track="5" data-color="ember" aria-label="Signal 05 — tap to decode" style="--node-x: 30%; --node-y: 78%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">05</span>
         </button>
 
-        <button class="node" data-track="6" data-color="resolve" aria-label="We Remain — tap to decode" style="--node-x: 68%; --node-y: 82%;">
+        <button class="node" data-track="6" data-color="resolve" aria-label="Signal 06 — tap to decode" style="--node-x: 68%; --node-y: 82%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">06</span>
@@ -147,9 +143,9 @@
     </section>
 
     <!-- ═══════════════════════════════════════════
-         TRACK PANEL — overlay for decoded signal
+         TRACK PANEL — overlay with hold-to-decode
          ═══════════════════════════════════════════ -->
-    <div class="panel" id="panel" aria-hidden="true">
+    <div class="panel" id="panel" aria-hidden="true" data-holding="false">
       <div class="panel__backdrop"></div>
       <div class="panel__shell">
         <button class="panel__close" aria-label="Close">&times;</button>
@@ -163,18 +159,27 @@
         </div>
         <h2 class="panel__title" id="panel-title">Static Signals</h2>
         <div class="panel__status" id="panel-status">SIGNAL DETECTED</div>
-        <p class="panel__body" id="panel-body">The first glitches appear. The world feels off — systems flicker, structures crack. Something beneath the surface is starting to fail.</p>
+        <p class="panel__body" id="panel-body"></p>
         <div class="panel__divider" aria-hidden="true"></div>
-        <p class="panel__fragment" id="panel-fragment"></p>
+        <!-- Fragment: corrupted by default, hold to stabilise -->
+        <div class="panel__decode-zone" id="panel-decode">
+          <p class="panel__fragment corrupted" id="panel-fragment"></p>
+          <p class="panel__decode-hint">hold anywhere to stabilise signal</p>
+        </div>
       </div>
     </div>
 
     <!-- ═══════════════════════════════════════════
-         FINALE — manifesto + CTA (after all 6 decoded)
+         FINALE — hold-to-stabilise the final message
          ═══════════════════════════════════════════ -->
-    <section class="finale" id="finale">
+    <section class="finale" id="finale" data-holding="false">
       <div class="finale__content">
-        <blockquote class="finale__quote">
+        <div class="finale__signal-prompt">
+          <p class="finale__signal-text">A final signal remains.</p>
+          <p class="finale__signal-hint">Hold to stabilise.</p>
+        </div>
+
+        <blockquote class="finale__quote corrupted">
           <p class="finale__text">
             Even when everything fails —<br />
             systems, connections, identity, stability —<br />
