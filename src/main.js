@@ -1,11 +1,16 @@
 /* ═══════════════════════════════════════════════════════════════
    DEAD FREQUENCIES — Transmission Experience Engine
    State Machine: gate → sigmap → (panel) → finale
-   Core Mechanic: HOLD TO STABILISE + SoundCloud playback
+   Interaction: TAP node → open panel → HOLD to unlock signal
    ═══════════════════════════════════════════════════════════════ */
 
 (function () {
   "use strict";
+
+  const DEBUG = true;
+  function log(/* ...args */) {
+    if (DEBUG) console.log("[DF]", ...arguments);
+  }
 
   const $ = (s, c = document) => c.querySelector(s);
   const $$ = (s, c = document) => [...c.querySelectorAll(s)];
@@ -67,6 +72,7 @@
     soundOn: true,
     explored: new Set(),
     panelOpen: false,
+    panelTrackId: null,
     currentState: "gate",
     holding: false,
     finaleStabilised: false,
@@ -96,7 +102,9 @@
   const finalePrompt = $(".finale__signal-prompt");
   const finaleCta = $(".finale__cta-block");
   const panelFragment = $("#panel-fragment");
-  const panelDecodeHint = $(".panel__decode-hint");
+  const panelUnlock = $("#panel-unlock");
+  const panelUnlockFill = $("#panel-unlock-fill");
+  const panelUnlockLabel = $("#panel-unlock-label");
   const finaleEl = $("#finale");
 
   /* ═══════════════════════════════════════════════════════════
@@ -110,7 +118,12 @@
   function initSCWidgets() {
     if (scInited) return;
     scInited = true;
-    if (!window.SC || !window.SC.Widget) return;
+
+    if (!window.SC || !window.SC.Widget) {
+      log("SC Widget API not available — will use fallback audio");
+      return;
+    }
+    log("SC Widget API loaded, creating widgets...");
 
     const container = $("#sc-players");
     if (!container) return;
@@ -119,12 +132,13 @@
       const iframe = document.createElement("iframe");
       iframe.id = "sc-" + id;
       iframe.allow = "autoplay";
+      iframe.loading = "eager";
       iframe.src =
         "https://w.soundcloud.com/player/?url=" +
         encodeURIComponent(t.sc.url) +
         "&auto_play=false&buying=false&sharing=false&show_artwork=false" +
         "&show_comments=false&show_playcount=false&show_user=false" +
-        "&hide_related=true&visual=false";
+        "&hide_related=true&visual=false&single_active=false";
       container.appendChild(iframe);
 
       const widget = SC.Widget(iframe);
@@ -132,66 +146,72 @@
 
       widget.bind(SC.Widget.Events.READY, () => {
         scWidgets[id].ready = true;
+        log("SC widget READY: track", id, t.title);
+      });
+
+      widget.bind(SC.Widget.Events.ERROR, () => {
+        log("SC widget ERROR: track", id);
       });
     });
   }
 
   /**
-   * Prime a track for playback — call this within user gesture (pointerdown).
-   * Starts playback muted so that mobile autoplay restrictions are satisfied.
+   * Play a SC track. Call within user gesture (pointerdown) for mobile.
+   * Starts muted, seeks to start, then fades in.
    */
-  function primeSCTrack(trackId) {
-    const w = scWidgets[trackId];
-    if (!w || !w.ready || !state.soundOn) return;
-    const t = TRACKS[trackId];
-
-    // Stop any current playback first
+  function playSCTrack(trackId) {
     stopSCTrack();
 
-    state.activeTrack = trackId;
-    w.fadingOut = false;
-    w.widget.setVolume(0);
-    w.widget.seekTo(t.sc.start);
-    w.widget.play(); // within user gesture → mobile safe
-  }
-
-  /**
-   * Fade in a primed (silently playing) track. Called on hold completion.
-   * Re-seeks to start so the clip begins cleanly.
-   */
-  function fadeInSCTrack(trackId) {
-    const w = scWidgets[trackId];
-    if (!w || !w.ready || !state.soundOn) {
+    const key = String(trackId);
+    const w = scWidgets[key];
+    if (!w || !w.ready) {
+      log("SC widget not ready for track", trackId, "— using fallback");
       playNodeSound(trackId);
       return;
     }
-    const t = TRACKS[trackId];
+    if (!state.soundOn) return;
 
+    const t = TRACKS[trackId];
+    log("Playing SC track", trackId, t.title, "from", t.sc.start, "to", t.sc.end);
+
+    state.activeTrack = trackId;
     w.fadingOut = false;
+
+    // Start muted within user gesture, then seek + fade in
+    w.widget.setVolume(0);
     w.widget.seekTo(t.sc.start);
+    w.widget.play();
 
     // Fade in over ~500ms
     let vol = 0;
     clearInterval(scFadeInterval);
     scFadeInterval = setInterval(() => {
-      vol = Math.min(vol + 4, 100);
-      w.widget.setVolume(vol);
-      if (vol >= 100) clearInterval(scFadeInterval);
-    }, 20);
+      vol = Math.min(vol + 5, 100);
+      try { w.widget.setVolume(vol); } catch (e) {}
+      if (vol >= 100) {
+        clearInterval(scFadeInterval);
+        log("SC fade-in complete, track", trackId);
+      }
+    }, 25);
 
     // Schedule fade-out before end
     const clipLen = t.sc.end - t.sc.start;
-    const fadeOutAt = Math.max(clipLen - 600, 0);
+    const maxDuration = 20000; // 20s safety cap
+    const playDuration = Math.min(clipLen, maxDuration);
+    const fadeOutAt = Math.max(playDuration - 800, 0);
 
     clearTimeout(scStopTimer);
     scStopTimer = setTimeout(() => {
+      log("SC auto-fadeout at end, track", trackId);
       fadeSCOut(trackId);
     }, fadeOutAt);
   }
 
   function fadeSCOut(trackId) {
-    const w = scWidgets[trackId];
+    const key = String(trackId);
+    const w = scWidgets[key];
     if (!w) return;
+    if (w.fadingOut) return;
     w.fadingOut = true;
 
     clearInterval(scFadeInterval);
@@ -199,21 +219,23 @@
 
     let vol = 100;
     scFadeInterval = setInterval(() => {
-      vol = Math.max(vol - 4, 0);
+      vol = Math.max(vol - 5, 0);
       try { w.widget.setVolume(vol); } catch (e) {}
       if (vol <= 0) {
         clearInterval(scFadeInterval);
         try { w.widget.pause(); } catch (e) {}
-        if (state.activeTrack === Number(trackId)) state.activeTrack = null;
+        if (state.activeTrack === trackId) state.activeTrack = null;
+        log("SC fade-out complete, track", trackId);
       }
-    }, 20);
+    }, 25);
   }
 
   function stopSCTrack() {
     clearTimeout(scStopTimer);
     clearInterval(scFadeInterval);
     if (state.activeTrack !== null) {
-      const w = scWidgets[state.activeTrack];
+      const key = String(state.activeTrack);
+      const w = scWidgets[key];
       if (w && w.ready) {
         try {
           w.widget.setVolume(0);
@@ -225,7 +247,7 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     WEB AUDIO — UI feedback sounds only
+     WEB AUDIO — UI feedback sounds (fallback + ticks)
      ═══════════════════════════════════════════════════════════ */
   let actx = null;
 
@@ -343,17 +365,15 @@
   });
 
   /* ═══════════════════════════════════════════════════════════
-     HOLD ENGINE
+     HOLD ENGINE — used by gate, panel unlock, and finale
      ═══════════════════════════════════════════════════════════ */
   const GATE_HOLD_TIME = 1500;
-  const NODE_HOLD_TIME = 1500;
+  const UNLOCK_HOLD_TIME = 600;
   const FINALE_HOLD_TIME = 2000;
 
   let holdStart = 0;
   let holdRaf = null;
-  let holdContext = null; // "gate" | "node" | "finale"
-  let holdNodeEl = null;
-  let holdNodeId = null;
+  let holdContext = null; // "gate" | "unlock" | "finale"
 
   function setHolding(isHolding) {
     state.holding = isHolding;
@@ -363,20 +383,18 @@
     }
   }
 
-  function startHold(context, e, nodeEl, nodeId) {
+  function startHold(context) {
     if (holdRaf) return;
     holdContext = context;
     holdStart = performance.now();
-    holdNodeEl = nodeEl || null;
-    holdNodeId = nodeId || null;
     setHolding(true);
     playHoldTick();
 
     if (context === "gate" && gateHoldZone) {
       gateHoldZone.classList.add("is-holding");
     }
-    if (context === "node" && holdNodeEl) {
-      holdNodeEl.classList.add("is-holding");
+    if (context === "unlock" && panelUnlock) {
+      panelUnlock.classList.add("is-holding");
     }
     if (context === "finale") {
       holdIndicator.classList.add("is-visible");
@@ -390,26 +408,19 @@
     const elapsed = performance.now() - holdStart;
     let duration;
     if (holdContext === "gate") duration = GATE_HOLD_TIME;
-    else if (holdContext === "node") duration = NODE_HOLD_TIME;
+    else if (holdContext === "unlock") duration = UNLOCK_HOLD_TIME;
     else duration = FINALE_HOLD_TIME;
 
     const progress = Math.min(elapsed / duration, 1);
 
-    // Gate progress bar
     if (holdContext === "gate" && gateProgress) {
       gateProgress.style.width = progress * 100 + "%";
     }
-
-    // Node progress ring (CSS custom property drives conic-gradient)
-    if (holdContext === "node" && holdNodeEl) {
-      holdNodeEl.style.setProperty("--hp", progress.toFixed(3));
+    if (holdContext === "unlock" && panelUnlockFill) {
+      panelUnlockFill.style.width = progress * 100 + "%";
     }
-
-    // Finale indicator ring
     if (holdContext === "finale" && holdIndicatorFill) {
-      holdIndicatorFill.style.strokeDashoffset = String(
-        169.65 * (1 - progress)
-      );
+      holdIndicatorFill.style.strokeDashoffset = String(169.65 * (1 - progress));
     }
 
     if (progress >= 1) {
@@ -423,7 +434,7 @@
     if (holdRaf) cancelAnimationFrame(holdRaf);
     holdRaf = null;
 
-    /* ── Gate complete ──────────────────────────────────── */
+    /* ── Gate ─────────────────────────────────────────── */
     if (holdContext === "gate") {
       if (state.soundOn) {
         initAudio();
@@ -434,44 +445,55 @@
       resetHoldVisuals();
     }
 
-    /* ── Node complete — decode + play audio ────────────── */
-    else if (holdContext === "node") {
-      const trackId = holdNodeId;
-      const nodeEl = holdNodeEl;
+    /* ── Panel unlock — decode fragment + play audio ──── */
+    else if (holdContext === "unlock") {
+      const trackId = state.panelTrackId;
+      log("Unlock complete for track", trackId);
+
+      // Mark decoded
+      if (trackId && !state.explored.has(trackId)) {
+        state.explored.add(trackId);
+        const nodeEl = $(`.node[data-track="${trackId}"]`);
+        if (nodeEl) nodeEl.classList.add("is-decoded");
+
+        const count = state.explored.size;
+        decodedCount.textContent = String(count);
+        html.dataset.explored = String(count);
+        updateIntegrity(count);
+      }
+
+      // Stabilise fragment
+      if (panelFragment) {
+        panelFragment.classList.remove("corrupted");
+        panelFragment.classList.add("is-stable");
+      }
+      if (panelUnlock) {
+        panelUnlock.classList.remove("is-holding");
+        panelUnlock.classList.add("is-unlocked");
+      }
+      if (panelUnlockLabel) {
+        panelUnlockLabel.textContent = "Signal Unlocked";
+      }
+
+      // Play SC audio (this is within the rAF chain from pointerdown — user gesture)
+      if (trackId) playSCTrack(trackId);
+
       resetHoldVisuals();
 
-      if (trackId && nodeEl) {
-        if (!state.explored.has(trackId)) {
-          state.explored.add(trackId);
-          nodeEl.classList.add("is-decoded");
-
-          const count = state.explored.size;
-          decodedCount.textContent = String(count);
-          html.dataset.explored = String(count);
-          updateIntegrity(count);
-        }
-
-        // Fade in SC audio (was primed on pointerdown)
-        fadeInSCTrack(trackId);
-
-        // Open info panel
-        openPanel(trackId);
-
-        // All 6 decoded → finale
-        if (state.explored.size === 6) {
+      // Check completion → finale
+      if (state.explored.size === 6) {
+        setTimeout(() => {
+          closePanel();
           setTimeout(() => {
-            closePanel();
-            setTimeout(() => {
-              stopSCTrack();
-              playCompletionSound();
-              setState("finale");
-            }, 500);
-          }, 2500);
-        }
+            stopSCTrack();
+            playCompletionSound();
+            setState("finale");
+          }, 500);
+        }, 2500);
       }
     }
 
-    /* ── Finale complete — stabilise quote, reveal CTA ──── */
+    /* ── Finale ──────────────────────────────────────── */
     else if (holdContext === "finale") {
       if (!state.finaleStabilised) {
         state.finaleStabilised = true;
@@ -488,34 +510,24 @@
     }
 
     holdContext = null;
-    holdNodeEl = null;
-    holdNodeId = null;
   }
 
   function cancelHold() {
     if (holdRaf) cancelAnimationFrame(holdRaf);
     holdRaf = null;
-
-    // If we primed a SC track on node pointerdown, stop it
-    if (holdContext === "node" && state.activeTrack !== null) {
-      stopSCTrack();
-    }
-
     setHolding(false);
     resetHoldVisuals();
     holdContext = null;
-    holdNodeEl = null;
-    holdNodeId = null;
   }
 
   function resetHoldVisuals() {
     if (gateProgress) gateProgress.style.width = "0%";
     if (gateHoldZone) gateHoldZone.classList.remove("is-holding");
 
-    nodes.forEach((n) => {
-      n.classList.remove("is-holding");
-      n.style.removeProperty("--hp");
-    });
+    if (panelUnlock && !panelUnlock.classList.contains("is-unlocked")) {
+      panelUnlock.classList.remove("is-holding");
+      if (panelUnlockFill) panelUnlockFill.style.width = "0%";
+    }
 
     holdIndicator.classList.remove("is-visible");
     if (holdIndicatorFill) holdIndicatorFill.style.strokeDashoffset = "169.65";
@@ -528,69 +540,38 @@
     gateHoldZone.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
-      startHold("gate", e);
+      startHold("gate");
     });
-    gateHoldZone.addEventListener("pointerup", cancelHold);
-    gateHoldZone.addEventListener("pointercancel", cancelHold);
-    gateHoldZone.addEventListener("pointerleave", cancelHold);
+    gateHoldZone.addEventListener("pointerup", () => {
+      if (holdContext === "gate") cancelHold();
+    });
+    gateHoldZone.addEventListener("pointercancel", () => {
+      if (holdContext === "gate") cancelHold();
+    });
+    gateHoldZone.addEventListener("pointerleave", () => {
+      if (holdContext === "gate") cancelHold();
+    });
     gateHoldZone.addEventListener("contextmenu", (e) => e.preventDefault());
   }
 
-  /* ── Node Hold-to-Decode ────────────────────────────────── */
-  let nodeTapId = null;
-
+  /* ═══════════════════════════════════════════════════════════
+     NODES — simple TAP to open panel (no hold)
+     ═══════════════════════════════════════════════════════════ */
   nodes.forEach((node) => {
-    const trackId = parseInt(node.dataset.track, 10);
-
-    node.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-
-      // Already decoded → just track for tap-to-reopen
-      if (state.explored.has(trackId)) {
-        nodeTapId = trackId;
-        return;
-      }
-
-      // Start hold + prime audio (within user gesture for mobile)
-      startHold("node", e, node, trackId);
-      if (state.soundOn) {
-        initAudio();
-        if (actx && actx.state === "suspended") actx.resume();
-        primeSCTrack(trackId);
-      }
+    node.addEventListener("click", () => {
+      const trackId = parseInt(node.dataset.track, 10);
+      openPanel(trackId);
     });
-
-    node.addEventListener("pointerup", () => {
-      // Tap on decoded node → reopen panel + replay clip
-      if (nodeTapId === trackId) {
-        nodeTapId = null;
-        openPanel(trackId);
-        if (state.soundOn) primeSCTrack(trackId);
-        // Small delay then fade in (prime needs a tick to start)
-        setTimeout(() => fadeInSCTrack(trackId), 80);
-        return;
-      }
-      if (holdContext === "node") cancelHold();
-    });
-
-    node.addEventListener("pointercancel", () => {
-      nodeTapId = null;
-      if (holdContext === "node" && holdNodeEl === node) cancelHold();
-    });
-
-    node.addEventListener("pointerleave", () => {
-      nodeTapId = null;
-      if (holdContext === "node" && holdNodeEl === node) cancelHold();
-    });
-
-    node.addEventListener("contextmenu", (e) => e.preventDefault());
   });
 
-  /* ── Panel (info display — no hold interaction) ─────────── */
+  /* ═══════════════════════════════════════════════════════════
+     PANEL — info display + hold-to-unlock button
+     ═══════════════════════════════════════════════════════════ */
   function openPanel(trackId) {
     const t = TRACKS[trackId];
     if (!t) return;
+
+    state.panelTrackId = trackId;
 
     panel.style.setProperty(
       "--phase-color",
@@ -609,14 +590,37 @@
     $("#panel-body").textContent = t.body;
     $("#panel-fragment").textContent = t.fragment;
 
-    // Fragment always shown decoded (node hold already unlocked it)
-    if (panelFragment) {
-      panelFragment.classList.remove("corrupted");
-      panelFragment.classList.add("is-stable");
-    }
-    if (panelDecodeHint) panelDecodeHint.classList.add("is-hidden");
-
     renderBars($("#panel-bars"), t.signal, t.color);
+
+    // Reset or set unlock state based on whether track is already decoded
+    const isDecoded = state.explored.has(trackId);
+
+    if (panelFragment) {
+      if (isDecoded) {
+        panelFragment.classList.remove("corrupted");
+        panelFragment.classList.add("is-stable");
+      } else {
+        panelFragment.classList.add("corrupted");
+        panelFragment.classList.remove("is-stable");
+      }
+    }
+
+    if (panelUnlock) {
+      panelUnlock.classList.remove("is-holding");
+      if (isDecoded) {
+        panelUnlock.classList.add("is-unlocked");
+      } else {
+        panelUnlock.classList.remove("is-unlocked");
+      }
+    }
+    if (panelUnlockFill) {
+      panelUnlockFill.style.width = isDecoded ? "100%" : "0%";
+    }
+    if (panelUnlockLabel) {
+      panelUnlockLabel.textContent = isDecoded
+        ? "Signal Unlocked"
+        : "Hold to Unlock Signal";
+    }
 
     panel.classList.add("is-open");
     panel.setAttribute("aria-hidden", "false");
@@ -627,6 +631,8 @@
     panel.classList.remove("is-open");
     panel.setAttribute("aria-hidden", "true");
     state.panelOpen = false;
+    state.panelTrackId = null;
+    if (holdContext === "unlock") cancelHold();
   }
 
   panelClose.addEventListener("click", closePanel);
@@ -634,6 +640,34 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && state.panelOpen) closePanel();
   });
+
+  /* ── Panel Unlock Button — hold interaction ─────────────── */
+  if (panelUnlock) {
+    panelUnlock.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      // Don't allow re-unlock
+      if (panelUnlock.classList.contains("is-unlocked")) return;
+
+      // Init audio context within user gesture
+      if (state.soundOn) {
+        initAudio();
+        if (actx && actx.state === "suspended") actx.resume();
+      }
+
+      startHold("unlock");
+    });
+    panelUnlock.addEventListener("pointerup", () => {
+      if (holdContext === "unlock") cancelHold();
+    });
+    panelUnlock.addEventListener("pointercancel", () => {
+      if (holdContext === "unlock") cancelHold();
+    });
+    panelUnlock.addEventListener("pointerleave", () => {
+      if (holdContext === "unlock") cancelHold();
+    });
+    panelUnlock.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
 
   /* ── Signal bar renderer ────────────────────────────────── */
   function renderBars(container, filled, color) {
@@ -685,8 +719,7 @@
   finaleEl.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     if (state.currentState !== "finale" || state.finaleStabilised) return;
-    // Don't preventDefault — allow scrolling. CSS handles callout/selection.
-    startHold("finale", e);
+    startHold("finale");
   });
   finaleEl.addEventListener("pointerup", () => {
     if (holdContext === "finale") cancelHold();
@@ -705,6 +738,7 @@
   }
 
   /* ── Init ───────────────────────────────────────────────── */
+  log("Dead Frequencies engine starting");
   setState("gate");
   runBoot();
 })();

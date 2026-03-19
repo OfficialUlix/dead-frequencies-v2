@@ -398,11 +398,9 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
   padding: 1rem; z-index: 10;
-  touch-action: none;
-  -webkit-touch-callout: none;
   transition: transform 0.3s ease;
 }
-.node:active { transform: translate(-50%, -50%) scale(0.92); }
+.node:active { transform: translate(-50%, -50%) scale(0.95); }
 
 [data-color="cold"]     { --nc: var(--cold);     --ng: rgba(131,215,255,0.12); }
 [data-color="warm"]     { --nc: var(--warm);     --ng: rgba(255,111,78,0.12); }
@@ -412,30 +410,12 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 [data-color="resolve"]  { --nc: var(--resolve);  --ng: rgba(125,255,179,0.1); }
 
 .node__dot {
-  position: relative;
   width: 14px; height: 14px; border-radius: 50%;
   border: 1.5px solid var(--nc); background: transparent;
   box-shadow: 0 0 10px var(--ng);
-  transition: background 0.3s, box-shadow 0.3s, transform 0.3s;
+  transition: background 0.3s, box-shadow 0.3s;
 }
 .node:hover .node__dot { background: var(--ng); box-shadow: 0 0 20px var(--ng); }
-
-/* Hold progress ring — conic-gradient driven by --hp custom property */
-.node__dot::before {
-  content: "";
-  position: absolute; inset: -6px; border-radius: 50%;
-  background: conic-gradient(var(--nc) calc(var(--hp, 0) * 1turn), transparent 0);
-  -webkit-mask: radial-gradient(circle, transparent 52%, black 56%);
-  mask: radial-gradient(circle, transparent 52%, black 56%);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.node.is-holding .node__dot::before { opacity: 0.85; }
-.node.is-holding .node__dot {
-  background: var(--ng);
-  box-shadow: 0 0 24px var(--ng);
-  transform: scale(1.15);
-}
 
 .node__ping {
   position: absolute; top: 50%; left: 50%;
@@ -554,7 +534,7 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   opacity: 0.3;
 }
 
-/* Decode zone — hold to reveal */
+/* Decode zone */
 .panel__decode-zone { position: relative; }
 
 .panel__fragment {
@@ -562,19 +542,45 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   letter-spacing: 0.06em; color: var(--text-dim); line-height: 1.7;
 }
 
-.panel__decode-hint {
-  font-family: var(--mono); font-size: 0.5rem;
-  letter-spacing: 0.16em; text-transform: uppercase;
-  color: var(--text-faint); margin-top: 0.6rem;
-  animation: fade-pulse 3s ease-in-out infinite;
-  transition: opacity 0.4s;
+/* Unlock button — hold to stabilise signal */
+.panel__unlock {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  margin-top: 1rem; padding: 0.7rem 1.4rem;
+  border: 1px solid rgba(131,215,255,0.18); border-radius: 3px;
+  overflow: hidden; cursor: pointer;
+  touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none;
+  transition: border-color 0.3s, box-shadow 0.3s;
 }
-.panel__decode-hint.is-hidden { opacity: 0; }
+.panel__unlock:hover {
+  border-color: rgba(131,215,255,0.35);
+}
+.panel__unlock.is-holding {
+  border-color: rgba(131,215,255,0.5);
+  box-shadow: 0 0 16px rgba(131,215,255,0.06);
+}
+.panel__unlock.is-unlocked {
+  border-color: var(--phase-color);
+  pointer-events: none;
+}
 
-/* When holding inside panel */
-[data-holding="true"] .panel__fragment.corrupted {
-  filter: blur(0) brightness(1); opacity: 1;
+.panel__unlock-fill {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 0%; background: rgba(131,215,255,0.08);
+  transition: width 0.05s linear;
 }
+.panel__unlock.is-unlocked .panel__unlock-fill {
+  width: 100%; background: rgba(131,215,255,0.05);
+}
+
+.panel__unlock-label {
+  position: relative; z-index: 1;
+  font-family: var(--mono); font-size: 0.52rem;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--text-faint);
+  transition: color 0.3s;
+}
+.panel__unlock.is-holding .panel__unlock-label { color: var(--cold); }
+.panel__unlock.is-unlocked .panel__unlock-label { color: var(--phase-color); }
 
 /* ═══════════════════════════════════════════════════════════
    FINALE
@@ -723,11 +729,11 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
    SC PLAYERS — hidden offscreen
    ═══════════════════════════════════════════════════════════ */
 #sc-players {
-  position: absolute; left: -9999px; top: -9999px;
-  width: 1px; height: 1px; overflow: hidden;
-  opacity: 0; pointer-events: none;
+  position: fixed; left: -9999px; top: 0;
+  width: 300px; height: 600px;
+  overflow: hidden; pointer-events: none;
 }
-#sc-players iframe { width: 1px; height: 1px; border: none; }
+#sc-players iframe { display: block; width: 300px; height: 166px; border: none; }
 
 /* ═══════════════════════════════════════════════════════════
    RESPONSIVE

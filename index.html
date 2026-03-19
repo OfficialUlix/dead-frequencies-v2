@@ -104,37 +104,37 @@
         </div>
 
         <!-- 6 Nodes -->
-        <button class="node" data-track="1" data-color="cold" aria-label="Signal 01 — hold to decode" style="--node-x: 25%; --node-y: 18%;">
+        <button class="node" data-track="1" data-color="cold" aria-label="Signal 01 — tap to explore" style="--node-x: 25%; --node-y: 18%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">01</span>
         </button>
 
-        <button class="node" data-track="2" data-color="warm" aria-label="Signal 02 — hold to decode" style="--node-x: 72%; --node-y: 24%;">
+        <button class="node" data-track="2" data-color="warm" aria-label="Signal 02 — tap to explore" style="--node-x: 72%; --node-y: 24%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">02</span>
         </button>
 
-        <button class="node" data-track="3" data-color="ghost" aria-label="Signal 03 — hold to decode" style="--node-x: 15%; --node-y: 50%;">
+        <button class="node" data-track="3" data-color="ghost" aria-label="Signal 03 — tap to explore" style="--node-x: 15%; --node-y: 50%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">03</span>
         </button>
 
-        <button class="node" data-track="4" data-color="critical" aria-label="Signal 04 — hold to decode" style="--node-x: 80%; --node-y: 55%;">
+        <button class="node" data-track="4" data-color="critical" aria-label="Signal 04 — tap to explore" style="--node-x: 80%; --node-y: 55%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">04</span>
         </button>
 
-        <button class="node" data-track="5" data-color="ember" aria-label="Signal 05 — hold to decode" style="--node-x: 30%; --node-y: 78%;">
+        <button class="node" data-track="5" data-color="ember" aria-label="Signal 05 — tap to explore" style="--node-x: 30%; --node-y: 78%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">05</span>
         </button>
 
-        <button class="node" data-track="6" data-color="resolve" aria-label="Signal 06 — hold to decode" style="--node-x: 68%; --node-y: 82%;">
+        <button class="node" data-track="6" data-color="resolve" aria-label="Signal 06 — tap to explore" style="--node-x: 68%; --node-y: 82%;">
           <span class="node__ping" aria-hidden="true"></span>
           <span class="node__dot"></span>
           <span class="node__label">06</span>
@@ -161,10 +161,13 @@
         <div class="panel__status" id="panel-status">SIGNAL DETECTED</div>
         <p class="panel__body" id="panel-body"></p>
         <div class="panel__divider" aria-hidden="true"></div>
-        <!-- Fragment: corrupted by default, hold to stabilise -->
+        <!-- Fragment: corrupted until unlocked via hold -->
         <div class="panel__decode-zone" id="panel-decode">
           <p class="panel__fragment corrupted" id="panel-fragment"></p>
-          <p class="panel__decode-hint">signal decoded</p>
+          <div class="panel__unlock" id="panel-unlock">
+            <div class="panel__unlock-fill" id="panel-unlock-fill"></div>
+            <span class="panel__unlock-label" id="panel-unlock-label">Hold to Unlock Signal</span>
+          </div>
         </div>
       </div>
     </div>
