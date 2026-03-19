@@ -35,12 +35,14 @@ body {
   font-family: var(--sans); font-size: 16px; line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -webkit-text-size-adjust: 100%;
-  /* Prevent text selection during hold interactions */
+  /* Prevent text selection & iOS callout during hold interactions */
   -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
 }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-p, blockquote, h1, h2 { -webkit-user-select: text; user-select: text; }
+/* Allow text selection ONLY in finale CTA (after stabilisation) */
+.finale__cta-block { -webkit-user-select: text; user-select: text; }
 
 /* ═══════════════════════════════════════════════════════════
    CORRUPTION SYSTEM — the visual language of instability
@@ -299,9 +301,10 @@ p, blockquote, h1, h2 { -webkit-user-select: text; user-select: text; }
   transform: translate(-50%, -50%);
   z-index: 50; pointer-events: none;
   font-family: var(--sans); font-weight: 800;
-  font-size: clamp(2.5rem, 12vw, 6rem);
-  text-transform: uppercase; letter-spacing: 0.12em;
-  text-align: center; white-space: nowrap;
+  font-size: clamp(1.8rem, 10vw, 6rem);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  text-align: center;
+  max-width: 90vw; overflow: hidden;
   opacity: 0;
   transition: opacity 0.6s ease;
 }
@@ -395,6 +398,8 @@ p, blockquote, h1, h2 { -webkit-user-select: text; user-select: text; }
   transform: translate(-50%, -50%);
   display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
   padding: 1rem; z-index: 10;
+  touch-action: none;
+  -webkit-touch-callout: none;
   transition: transform 0.3s ease;
 }
 .node:active { transform: translate(-50%, -50%) scale(0.92); }
@@ -407,12 +412,30 @@ p, blockquote, h1, h2 { -webkit-user-select: text; user-select: text; }
 [data-color="resolve"]  { --nc: var(--resolve);  --ng: rgba(125,255,179,0.1); }
 
 .node__dot {
+  position: relative;
   width: 14px; height: 14px; border-radius: 50%;
   border: 1.5px solid var(--nc); background: transparent;
   box-shadow: 0 0 10px var(--ng);
-  transition: background 0.3s, box-shadow 0.3s;
+  transition: background 0.3s, box-shadow 0.3s, transform 0.3s;
 }
 .node:hover .node__dot { background: var(--ng); box-shadow: 0 0 20px var(--ng); }
+
+/* Hold progress ring — conic-gradient driven by --hp custom property */
+.node__dot::before {
+  content: "";
+  position: absolute; inset: -6px; border-radius: 50%;
+  background: conic-gradient(var(--nc) calc(var(--hp, 0) * 1turn), transparent 0);
+  -webkit-mask: radial-gradient(circle, transparent 52%, black 56%);
+  mask: radial-gradient(circle, transparent 52%, black 56%);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.node.is-holding .node__dot::before { opacity: 0.85; }
+.node.is-holding .node__dot {
+  background: var(--ng);
+  box-shadow: 0 0 24px var(--ng);
+  transform: scale(1.15);
+}
 
 .node__ping {
   position: absolute; top: 50%; left: 50%;
@@ -500,10 +523,11 @@ p, blockquote, h1, h2 { -webkit-user-select: text; user-select: text; }
 }
 
 .panel__title {
-  font-family: var(--sans); font-size: clamp(1.8rem, 6vw, 2.6rem);
+  font-family: var(--sans); font-size: clamp(1.4rem, 6vw, 2.6rem);
   font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase;
   line-height: 0.95; margin-bottom: 0.6rem;
   text-shadow: 0 0 40px var(--phase-glow);
+  word-break: break-word;
 }
 
 .panel__status {
@@ -624,9 +648,10 @@ p, blockquote, h1, h2 { -webkit-user-select: text; user-select: text; }
   color: var(--resolve); opacity: 0.65; margin-bottom: 1.4rem;
 }
 .finale__ep-title {
-  font-family: var(--sans); font-size: clamp(2rem, 7vw, 3.5rem);
+  font-family: var(--sans); font-size: clamp(1.6rem, 7vw, 3.5rem);
   font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
   line-height: 0.95; margin-bottom: 0.4rem;
+  max-width: 90vw; overflow: hidden;
 }
 .finale__ep-sub {
   font-family: var(--mono); font-size: 0.62rem;
@@ -695,11 +720,22 @@ p, blockquote, h1, h2 { -webkit-user-select: text; user-select: text; }
 }
 
 /* ═══════════════════════════════════════════════════════════
+   SC PLAYERS — hidden offscreen
+   ═══════════════════════════════════════════════════════════ */
+#sc-players {
+  position: absolute; left: -9999px; top: -9999px;
+  width: 1px; height: 1px; overflow: hidden;
+  opacity: 0; pointer-events: none;
+}
+#sc-players iframe { width: 1px; height: 1px; border: none; }
+
+/* ═══════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════ */
 @media (max-width: 380px) {
   .sigmap__field { max-height: 80vh; }
-  .sigmap__title-flash { font-size: clamp(2rem, 14vw, 3.5rem); }
+  .sigmap__title-flash { font-size: clamp(1.4rem, 12vw, 2.5rem); }
+  .finale__ep-title { font-size: clamp(1.4rem, 8vw, 2.5rem); }
 }
 
 @media (min-width: 600px) {
