@@ -259,9 +259,10 @@
 
       this.widgets[id] = entry;
 
-      // Bind READY
+      // Bind READY — clears any prior ERROR (SC fires ERROR before READY for private tracks)
       widget.bind(SC.Widget.Events.READY, () => {
         entry.ready = true;
+        entry.failed = false; // READY overrides earlier ERROR
         log("widget READY: track", id, t.title);
         resolveReady(true);
 
@@ -273,11 +274,13 @@
         }
       });
 
-      // Bind ERROR
+      // Bind ERROR — only mark failed if READY hasn't already fired
       widget.bind(SC.Widget.Events.ERROR, () => {
         log("widget ERROR: track", id, t.title);
-        entry.failed = true;
-        resolveReady(false);
+        if (!entry.ready) {
+          entry.failed = true;
+          resolveReady(false);
+        }
       });
 
       // Safety timeout — if READY doesn't fire in 15s, mark failed
