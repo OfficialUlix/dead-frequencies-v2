@@ -128,6 +128,104 @@
   const finaleEl = $("#finale");
 
   /* ═══════════════════════════════════════════════════════════
+     GLOBAL AUDIO UNLOCK — must fire on first user interaction
+     Mobile browsers block audio unless tied to a user gesture.
+     We unlock on first pointerdown globally, BEFORE any hold
+     timer or rAF chain runs.
+     ═══════════════════════════════════════════════════════════ */
+
+  let audioUnlocked = false;
+
+  // Use a WAV data URI — universally supported, tiny silent 1-sample file
+  const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+
+  const silentAudio = new Audio();
+  silentAudio.src = SILENT_WAV;
+  silentAudio.volume = 0;
+
+  function unlockAudio() {
+    if (audioUnlocked) return;
+
+    log("attempting global audio unlock...");
+
+    // 1. Unlock HTML5 Audio — the silent WAV may end before the promise resolves, that's fine
+    silentAudio.play().then(() => {
+      log("HTML5 Audio unlocked");
+    }).catch(() => {
+      // Expected: silent WAV is so short it ends instantly. The play() still unlocks the audio policy.
+      log("HTML5 Audio unlock triggered (silent WAV)");
+    });
+
+    // 2. Unlock AudioContext (for UI sounds)
+    initAudio();
+    if (actx) {
+      if (actx.state === "suspended") {
+        actx.resume().then(() => log("AudioContext resumed")).catch(() => {});
+      }
+      // Play a silent buffer to fully unlock
+      try {
+        const buf = actx.createBuffer(1, 1, 22050);
+        const src = actx.createBufferSource();
+        src.buffer = buf;
+        src.connect(actx.destination);
+        src.start(0);
+        log("AudioContext silent buffer played");
+      } catch (e) { /* ignore */ }
+    }
+
+    // 3. Pre-warm every SC widget that's ready — call play() then immediately pause()
+    // This makes the widget's internal audio context trust future play() calls
+    Object.entries(scEngine.widgets).forEach(([id, entry]) => {
+      if (entry.ready && !entry.primed) {
+        try {
+          entry.widget.setVolume(0);
+          entry.widget.play();
+          // Pause after a tiny delay to let the play register
+          setTimeout(() => {
+            try {
+              entry.widget.pause();
+              entry.widget.setVolume(0);
+            } catch (e) { /* ignore */ }
+          }, 150);
+          entry.primed = true;
+          log("SC widget primed: track", id);
+        } catch (e) {
+          log("SC widget prime failed: track", id, e.message);
+        }
+      }
+    });
+
+    audioUnlocked = true;
+    log("global audio unlock complete");
+  }
+
+  // Attach to first pointerdown on the entire document
+  document.addEventListener("pointerdown", function onFirstInteraction() {
+    unlockAudio();
+    // Keep listening — widgets may load after first interaction
+    // Only remove after all widgets are primed
+  }, { capture: true });
+
+  // Also try to prime widgets that become READY after the first interaction
+  function primeWidget(trackId) {
+    if (!audioUnlocked) return;
+    const entry = scEngine.widgets[String(trackId)];
+    if (!entry || !entry.ready || entry.primed) return;
+    try {
+      entry.widget.setVolume(0);
+      entry.widget.play();
+      setTimeout(() => {
+        try {
+          entry.widget.pause();
+          entry.widget.setVolume(0);
+        } catch (e) { /* ignore */ }
+      }, 150);
+      entry.primed = true;
+      log("SC widget late-primed: track", trackId);
+    } catch (e) { /* ignore */ }
+  }
+
+  /* ═══════════════════════════════════════════════════════════
      SOUNDCLOUD WIDGET ENGINE — hardened async module
      ═══════════════════════════════════════════════════════════ */
 
@@ -253,6 +351,7 @@
         ready: false,
         failed: false,
         fadingOut: false,
+        primed: false,
         readyPromise,
         resolveReady,
       };
@@ -265,6 +364,9 @@
         entry.failed = false; // READY overrides earlier ERROR
         log("widget READY: track", id, t.title);
         resolveReady(true);
+
+        // Prime this widget if audio is already unlocked
+        primeWidget(trackId);
 
         // If playback was queued for this track, fire it now
         if (this.pendingPlay === trackId) {
@@ -370,6 +472,7 @@
         entry.widget.seekTo(t.sc.start);
         log("seekTo called:", t.sc.start, "track", id);
 
+        // play() — may already be playing from early gesture call, that's fine
         entry.widget.play();
         log("play() called: track", id);
       } catch (e) {
@@ -899,10 +1002,24 @@
       // Don't allow re-unlock
       if (panelUnlock.classList.contains("is-unlocked")) return;
 
-      // Init audio context within user gesture
-      if (state.soundOn) {
-        initAudio();
-        if (actx && actx.state === "suspended") actx.resume();
+      // Global audio unlock (runs on every pointerdown, idempotent)
+      unlockAudio();
+
+      // CRITICAL: Start SC widget playback NOW within user gesture context.
+      // Mobile browsers require play() in the same call stack as the user event.
+      // We play muted here; completeHold() will seek + fade in after hold timer.
+      if (state.soundOn && state.panelTrackId) {
+        const tid = String(state.panelTrackId);
+        const entry = scEngine.widgets[tid];
+        if (entry && entry.ready) {
+          try {
+            entry.widget.setVolume(0);
+            entry.widget.play();
+            log("early play() in user gesture: track", tid);
+          } catch (e) {
+            log("early play() failed: track", tid, e.message);
+          }
+        }
       }
 
       startHold("unlock");
