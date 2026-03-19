@@ -2,20 +2,21 @@
    DEAD FREQUENCIES — Transmission Experience Engine
    State Machine: gate → sigmap → (panel) → finale
    Interaction: TAP node → open panel → HOLD to unlock signal
+   Audio: Native <audio> element with per-track MP3 previews
    ═══════════════════════════════════════════════════════════════ */
 
 (function () {
   "use strict";
 
   const DEBUG = true;
-  function log(/* ...args */) {
+  function log() {
     if (DEBUG) console.log("[DF]", ...arguments);
   }
 
   const $ = (s, c = document) => c.querySelector(s);
   const $$ = (s, c = document) => [...c.querySelectorAll(s)];
 
-  /* ── Track data — canonical SoundCloud permalinks (not short links) ── */
+  /* ── Track data ─────────────────────────────────────────── */
   const TRACKS = {
     1: {
       number: "01", title: "Static Signals",
@@ -23,10 +24,7 @@
       signal: 6, pct: "78%", color: "cold",
       body: "The first glitches appear. The world feels off — systems flicker, structures crack. Something beneath the surface is starting to fail.",
       fragment: '"the screens keep splitting / nothing holds its shape"',
-      sc: {
-        url: "https://soundcloud.com/officialulix/ulix-static-signals-1/s-V7ug4l0qGYr",
-        start: 36000, end: 49000,
-      },
+      audio: { src: "audio/static-signals.mp3", start: 36, end: 49 },
     },
     2: {
       number: "02", title: "Drown Tonight",
@@ -34,10 +32,7 @@
       signal: 4, pct: "54%", color: "warm",
       body: "The collapse turns inward. Noise and pressure overwhelm until breathing through the disconnection feels impossible.",
       fragment: '"sinking past the frequency / where voices used to reach"',
-      sc: {
-        url: "https://soundcloud.com/officialulix/ulix-drown-tonight-2/s-VYKm32cNzNZ",
-        start: 82000, end: 100000,
-      },
+      audio: { src: "audio/drown-tonight.mp3", start: 82, end: 100 },
     },
     3: {
       number: "03", title: "Ghost",
@@ -45,10 +40,7 @@
       signal: 3, pct: "32%", color: "ghost",
       body: "Still physically present, but mentally absent. Identity fractures until the self becomes a ghost inside its own life.",
       fragment: '"i\'m standing right here / but nothing registers"',
-      sc: {
-        url: "https://soundcloud.com/officialulix/ulix-gitfl-3/s-wPlaj8bvz0O",
-        start: 11000, end: 21000,
-      },
+      audio: { src: "audio/ghost.mp3", start: 11, end: 21 },
     },
     4: {
       number: "04", title: "Neon Graves",
@@ -56,10 +48,7 @@
       signal: 1, pct: "08%", color: "critical",
       body: "Total breakdown. Dead lights and lost signals turn the city into a graveyard of everything that once felt stable.",
       fragment: '"every light that burned is now a monument to what we lost"',
-      sc: {
-        url: "https://soundcloud.com/officialulix/ulix-neon-graves-4/s-G7K5QUeuU4G",
-        start: 90000, end: 113000,
-      },
+      audio: { src: "audio/neon-graves.mp3", start: 90, end: 113 },
     },
     5: {
       number: "05", title: "Light The Fire",
@@ -67,10 +56,7 @@
       signal: 4, pct: "MANUAL", color: "ember",
       body: "A moment of defiance. Instead of waiting for the system to recover, the protagonist breaks free from it.",
       fragment: '"burn the protocol / override the silence"',
-      sc: {
-        url: "https://soundcloud.com/officialulix/ulix-light-the-fire-5/s-3vfkGU9Nx9l",
-        start: 36000, end: 49000,
-      },
+      audio: { src: "audio/light-the-fire.mp3", start: 36, end: 49 },
     },
     6: {
       number: "06", title: "We Remain",
@@ -78,10 +64,7 @@
       signal: 8, pct: "HUMAN", color: "resolve",
       body: "Silence settles after the collapse. The world is scarred and broken, but something human survives — and keeps transmitting.",
       fragment: '"after everything / we are still here / still transmitting"',
-      sc: {
-        url: "https://soundcloud.com/officialulix/ulix-we-remain-6/s-cVut0hn7zJA",
-        start: 101000, end: 112000,
-      },
+      audio: { src: "audio/we-remain.mp3", start: 101, end: 112 },
     },
   };
 
@@ -128,466 +111,167 @@
   const finaleEl = $("#finale");
 
   /* ═══════════════════════════════════════════════════════════
-     GLOBAL AUDIO UNLOCK — must fire on first user interaction
-     Mobile browsers block audio unless tied to a user gesture.
-     We unlock on first pointerdown globally, BEFORE any hold
-     timer or rAF chain runs.
+     NATIVE AUDIO ENGINE — single shared <audio> element
      ═══════════════════════════════════════════════════════════ */
 
+  const audioEl = new Audio();
+  audioEl.preload = "none";
+  let audioFadeInterval = null;
+  let audioStopTimer = null;
   let audioUnlocked = false;
 
-  // Use a WAV data URI — universally supported, tiny silent 1-sample file
-  const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
-
-  const silentAudio = new Audio();
-  silentAudio.src = SILENT_WAV;
-  silentAudio.volume = 0;
-
-  function unlockAudio() {
+  // Unlock audio on first user interaction — iOS requires this
+  function unlockAudioEl() {
     if (audioUnlocked) return;
-
-    log("attempting global audio unlock...");
-
-    // 1. Unlock HTML5 Audio — the silent WAV may end before the promise resolves, that's fine
-    silentAudio.play().then(() => {
-      log("HTML5 Audio unlocked");
-    }).catch(() => {
-      // Expected: silent WAV is so short it ends instantly. The play() still unlocks the audio policy.
-      log("HTML5 Audio unlock triggered (silent WAV)");
-    });
-
-    // 2. Unlock AudioContext (for UI sounds)
-    initAudio();
-    if (actx) {
-      if (actx.state === "suspended") {
-        actx.resume().then(() => log("AudioContext resumed")).catch(() => {});
-      }
-      // Play a silent buffer to fully unlock
-      try {
-        const buf = actx.createBuffer(1, 1, 22050);
-        const src = actx.createBufferSource();
-        src.buffer = buf;
-        src.connect(actx.destination);
-        src.start(0);
-        log("AudioContext silent buffer played");
-      } catch (e) { /* ignore */ }
+    audioEl.volume = 0;
+    audioEl.muted = true;
+    const p = audioEl.play();
+    if (p && p.then) {
+      p.then(() => {
+        audioEl.pause();
+        audioEl.muted = false;
+        audioEl.currentTime = 0;
+        audioUnlocked = true;
+        log("audio element unlocked");
+      }).catch(() => {
+        audioEl.muted = false;
+        audioUnlocked = true; // still mark unlocked — the gesture was registered
+        log("audio unlock (gesture registered)");
+      });
+    } else {
+      audioUnlocked = true;
     }
-
-    // 3. Pre-warm every SC widget that's ready — call play() then immediately pause()
-    // This makes the widget's internal audio context trust future play() calls
-    Object.entries(scEngine.widgets).forEach(([id, entry]) => {
-      if (entry.ready && !entry.primed) {
-        try {
-          entry.widget.setVolume(0);
-          entry.widget.play();
-          // Pause after a tiny delay to let the play register
-          setTimeout(() => {
-            try {
-              entry.widget.pause();
-              entry.widget.setVolume(0);
-            } catch (e) { /* ignore */ }
-          }, 150);
-          entry.primed = true;
-          log("SC widget primed: track", id);
-        } catch (e) {
-          log("SC widget prime failed: track", id, e.message);
-        }
-      }
-    });
-
-    audioUnlocked = true;
-    log("global audio unlock complete");
   }
 
-  // Attach to first pointerdown on the entire document
-  document.addEventListener("pointerdown", function onFirstInteraction() {
-    unlockAudio();
-    // Keep listening — widgets may load after first interaction
-    // Only remove after all widgets are primed
+  // Global first-interaction unlock
+  document.addEventListener("pointerdown", function firstTouch() {
+    unlockAudioEl();
+    initAudio(); // also unlock Web Audio for UI sounds
+    if (actx && actx.state === "suspended") actx.resume();
+    document.removeEventListener("pointerdown", firstTouch, true);
   }, { capture: true });
 
-  // Also try to prime widgets that become READY after the first interaction
-  function primeWidget(trackId) {
-    if (!audioUnlocked) return;
-    const entry = scEngine.widgets[String(trackId)];
-    if (!entry || !entry.ready || entry.primed) return;
-    try {
-      entry.widget.setVolume(0);
-      entry.widget.play();
-      setTimeout(() => {
-        try {
-          entry.widget.pause();
-          entry.widget.setVolume(0);
-        } catch (e) { /* ignore */ }
-      }, 150);
-      entry.primed = true;
-      log("SC widget late-primed: track", trackId);
-    } catch (e) { /* ignore */ }
+  /**
+   * Preload a track's audio (set src, don't play).
+   */
+  function preloadTrack(trackId) {
+    const t = TRACKS[trackId];
+    if (!t) return;
+    // Only change src if different
+    if (audioEl.dataset.track !== String(trackId)) {
+      audioEl.src = t.audio.src;
+      audioEl.dataset.track = String(trackId);
+      audioEl.preload = "auto";
+      log("preloading track", trackId, t.title);
+    }
   }
-
-  /* ═══════════════════════════════════════════════════════════
-     SOUNDCLOUD WIDGET ENGINE — hardened async module
-     ═══════════════════════════════════════════════════════════ */
-
-  const scEngine = {
-    apiLoaded: false,
-    apiPromise: null,
-    widgets: {},       // { [trackId]: { widget, iframe, ready, failed, readyPromise, resolveReady } }
-    fadeInterval: null,
-    stopTimer: null,
-    pendingPlay: null,  // trackId queued for play once ready
-
-    /**
-     * Step 1: Ensure the SC Widget API script is loaded and SC.Widget exists.
-     * Returns a promise that resolves when window.SC.Widget is available.
-     */
-    loadWidgetAPI() {
-      if (this.apiPromise) return this.apiPromise;
-
-      this.apiPromise = new Promise((resolve) => {
-        // Check if already loaded
-        if (window.SC && window.SC.Widget) {
-          log("SC Widget API already available");
-          this.apiLoaded = true;
-          resolve(true);
-          return;
-        }
-
-        // Check if the script tag exists but hasn't loaded yet
-        const existing = document.querySelector('script[src*="w.soundcloud.com/player/api.js"]');
-
-        const onLoad = () => {
-          // Poll briefly for SC.Widget — the script may define it async
-          let attempts = 0;
-          const check = () => {
-            if (window.SC && window.SC.Widget) {
-              log("SC Widget API loaded successfully");
-              this.apiLoaded = true;
-              resolve(true);
-            } else if (attempts < 50) {
-              attempts++;
-              setTimeout(check, 100);
-            } else {
-              log("SC Widget API failed to define SC.Widget after script load");
-              resolve(false);
-            }
-          };
-          check();
-        };
-
-        if (existing) {
-          // Script tag exists — might still be loading
-          if (existing.hasAttribute("data-loaded")) {
-            onLoad();
-          } else {
-            existing.addEventListener("load", () => {
-              existing.setAttribute("data-loaded", "true");
-              onLoad();
-            });
-            existing.addEventListener("error", () => {
-              log("SC Widget API script failed to load");
-              resolve(false);
-            });
-          }
-        } else {
-          // No script tag — inject one
-          const script = document.createElement("script");
-          script.src = "https://w.soundcloud.com/player/api.js";
-          script.onload = () => {
-            script.setAttribute("data-loaded", "true");
-            onLoad();
-          };
-          script.onerror = () => {
-            log("SC Widget API script injection failed");
-            resolve(false);
-          };
-          document.head.appendChild(script);
-        }
-      });
-
-      return this.apiPromise;
-    },
-
-    /**
-     * Step 2: Create widget for a specific track.
-     * Returns the widget entry with a readyPromise.
-     */
-    createWidget(trackId) {
-      const id = String(trackId);
-      if (this.widgets[id]) return this.widgets[id];
-
-      const t = TRACKS[trackId];
-      if (!t) return null;
-
-      const container = $("#sc-players");
-      if (!container) return null;
-
-      // Create iframe with canonical permalink
-      const iframe = document.createElement("iframe");
-      iframe.id = "sc-" + id;
-      iframe.allow = "autoplay";
-      iframe.loading = "eager";
-      iframe.src =
-        "https://w.soundcloud.com/player/?url=" +
-        encodeURIComponent(t.sc.url) +
-        "&auto_play=false&buying=false&sharing=false&show_artwork=false" +
-        "&show_comments=false&show_playcount=false&show_user=false" +
-        "&hide_related=true&visual=false&single_active=false";
-      container.appendChild(iframe);
-      log("iframe created: track", id, t.title);
-
-      // Create widget from iframe
-      const widget = SC.Widget(iframe);
-
-      // Build entry with a promise that resolves on READY
-      let resolveReady;
-      const readyPromise = new Promise((resolve) => {
-        resolveReady = resolve;
-      });
-
-      const entry = {
-        widget,
-        iframe,
-        ready: false,
-        failed: false,
-        fadingOut: false,
-        primed: false,
-        readyPromise,
-        resolveReady,
-      };
-
-      this.widgets[id] = entry;
-
-      // Bind READY — clears any prior ERROR (SC fires ERROR before READY for private tracks)
-      widget.bind(SC.Widget.Events.READY, () => {
-        entry.ready = true;
-        entry.failed = false; // READY overrides earlier ERROR
-        log("widget READY: track", id, t.title);
-        resolveReady(true);
-
-        // Prime this widget if audio is already unlocked
-        primeWidget(trackId);
-
-        // If playback was queued for this track, fire it now
-        if (this.pendingPlay === trackId) {
-          this.pendingPlay = null;
-          log("executing queued playback for track", id);
-          this.playPreview(trackId);
-        }
-      });
-
-      // Bind ERROR — only mark failed if READY hasn't already fired
-      widget.bind(SC.Widget.Events.ERROR, () => {
-        log("widget ERROR: track", id, t.title);
-        if (!entry.ready) {
-          entry.failed = true;
-          resolveReady(false);
-        }
-      });
-
-      // Safety timeout — if READY doesn't fire in 15s, mark failed
-      setTimeout(() => {
-        if (!entry.ready && !entry.failed) {
-          log("widget TIMEOUT: track", id, "— no READY after 15s");
-          entry.failed = true;
-          resolveReady(false);
-        }
-      }, 15000);
-
-      return entry;
-    },
-
-    /**
-     * Step 3: Wait for a specific track's widget to be ready.
-     * Returns true if ready, false if failed.
-     */
-    async waitForReady(trackId) {
-      const id = String(trackId);
-      const entry = this.widgets[id];
-      if (!entry) return false;
-      if (entry.ready) return true;
-      if (entry.failed) return false;
-      return entry.readyPromise;
-    },
-
-    /**
-     * Initialize all 6 widgets after API is confirmed loaded.
-     */
-    async initAll() {
-      const apiOk = await this.loadWidgetAPI();
-      if (!apiOk) {
-        log("SC Widget API not available — all tracks will use fallback");
-        return;
-      }
-
-      log("creating widgets for all 6 tracks...");
-      for (const id of Object.keys(TRACKS)) {
-        this.createWidget(parseInt(id, 10));
-      }
-    },
-
-    /**
-     * Play preview for a track. Handles: stop others, wait for ready,
-     * seek, volume 0, play, fade in, schedule fade out at end.
-     */
-    async playPreview(trackId) {
-      if (!state.soundOn) return;
-
-      const id = String(trackId);
-      const t = TRACKS[trackId];
-      if (!t) return;
-
-      // Stop any currently playing track
-      this.stopAllPreviews();
-
-      const entry = this.widgets[id];
-      if (!entry) {
-        log("no widget for track", id, "— fallback");
-        playNodeSound(trackId);
-        showFallback(trackId);
-        return;
-      }
-
-      // If not ready yet, queue playback (will fire when READY arrives)
-      if (!entry.ready) {
-        if (entry.failed) {
-          log("widget failed for track", id, "— fallback");
-          playNodeSound(trackId);
-          showFallback(trackId);
-          return;
-        }
-        log("widget not ready yet for track", id, "— queuing playback");
-        this.pendingPlay = trackId;
-        return;
-      }
-
-      log("playPreview: track", id, t.title, "from", t.sc.start, "to", t.sc.end);
-      state.activeTrack = trackId;
-      entry.fadingOut = false;
-
-      try {
-        entry.widget.setVolume(0);
-        log("setVolume(0) called: track", id);
-
-        entry.widget.seekTo(t.sc.start);
-        log("seekTo called:", t.sc.start, "track", id);
-
-        // play() — may already be playing from early gesture call, that's fine
-        entry.widget.play();
-        log("play() called: track", id);
-      } catch (e) {
-        log("playPreview error:", e.message, "track", id);
-        playNodeSound(trackId);
-        showFallback(trackId);
-        return;
-      }
-
-      // Fade in volume over ~500ms
-      let vol = 0;
-      clearInterval(this.fadeInterval);
-      log("volume fade-in started: track", id);
-      this.fadeInterval = setInterval(() => {
-        vol = Math.min(vol + 5, 100);
-        try { entry.widget.setVolume(vol); } catch (e) { /* ignore */ }
-        if (vol >= 100) {
-          clearInterval(this.fadeInterval);
-          log("volume fade-in complete: track", id);
-        }
-      }, 25);
-
-      // Schedule fade-out before end timestamp
-      const clipLen = t.sc.end - t.sc.start;
-      const maxDuration = 20000;
-      const playDuration = Math.min(clipLen, maxDuration);
-      const fadeOutAt = Math.max(playDuration - 800, 0);
-
-      clearTimeout(this.stopTimer);
-      this.stopTimer = setTimeout(() => {
-        log("stop timer fired: track", id);
-        this.stopPreview(trackId);
-      }, fadeOutAt);
-    },
-
-    /**
-     * Fade out and stop a specific track.
-     */
-    stopPreview(trackId) {
-      const id = String(trackId);
-      const entry = this.widgets[id];
-      if (!entry || !entry.ready) return;
-      if (entry.fadingOut) return;
-      entry.fadingOut = true;
-
-      clearInterval(this.fadeInterval);
-      clearTimeout(this.stopTimer);
-
-      log("fade-out started: track", id);
-      let vol = 100;
-      this.fadeInterval = setInterval(() => {
-        vol = Math.max(vol - 5, 0);
-        try { entry.widget.setVolume(vol); } catch (e) { /* ignore */ }
-        if (vol <= 0) {
-          clearInterval(this.fadeInterval);
-          try { entry.widget.pause(); } catch (e) { /* ignore */ }
-          if (state.activeTrack === trackId) state.activeTrack = null;
-          log("fade-out complete, paused: track", id);
-        }
-      }, 25);
-    },
-
-    /**
-     * Immediately stop all previews.
-     */
-    stopAllPreviews() {
-      clearTimeout(this.stopTimer);
-      clearInterval(this.fadeInterval);
-      this.pendingPlay = null;
-
-      if (state.activeTrack !== null) {
-        const id = String(state.activeTrack);
-        const entry = this.widgets[id];
-        if (entry && entry.ready) {
-          try {
-            entry.widget.setVolume(0);
-            entry.widget.pause();
-          } catch (e) { /* ignore */ }
-        }
-        log("stopped active track:", id);
-        state.activeTrack = null;
-      }
-    },
-
-    /**
-     * Check if a track's widget is in a usable state.
-     */
-    isTrackReady(trackId) {
-      const entry = this.widgets[String(trackId)];
-      return entry ? entry.ready : false;
-    },
-
-    isTrackFailed(trackId) {
-      const entry = this.widgets[String(trackId)];
-      return entry ? entry.failed : false;
-    },
-  };
 
   /**
-   * Show fallback UI inside the panel for a track whose widget failed.
+   * Play a track preview. Must be called in user interaction context.
+   * Sets src if needed, seeks to start, plays, fades in, schedules stop.
    */
-  function showFallback(trackId) {
+  function playTrack(trackId) {
+    if (!state.soundOn) return;
+
     const t = TRACKS[trackId];
-    if (!t || !panelFallback || !panelFallbackLink) return;
-    panelFallbackLink.href = t.sc.url;
-    panelFallback.removeAttribute("hidden");
-    log("fallback shown for track", trackId);
+    if (!t) return;
+
+    // Stop any current playback
+    stopTrack();
+
+    log("playTrack:", trackId, t.title, "from", t.audio.start, "to", t.audio.end);
+    state.activeTrack = trackId;
+
+    // Set source if needed
+    if (audioEl.dataset.track !== String(trackId)) {
+      audioEl.src = t.audio.src;
+      audioEl.dataset.track = String(trackId);
+    }
+
+    // Seek to start and play at volume 0
+    audioEl.currentTime = t.audio.start;
+    audioEl.volume = 0;
+    log("currentTime set to", t.audio.start);
+
+    const playPromise = audioEl.play();
+    if (playPromise && playPromise.then) {
+      playPromise.then(() => {
+        log("play() succeeded: track", trackId);
+      }).catch((e) => {
+        log("play() failed: track", trackId, e.message);
+        showFallback(trackId);
+      });
+    }
+    log("play() called: track", trackId);
+
+    // Fade in over 400ms
+    clearInterval(audioFadeInterval);
+    let vol = 0;
+    log("fade-in started: track", trackId);
+    audioFadeInterval = setInterval(() => {
+      vol = Math.min(vol + 0.05, 1);
+      audioEl.volume = vol;
+      if (vol >= 1) {
+        clearInterval(audioFadeInterval);
+        audioFadeInterval = null;
+        log("fade-in complete: track", trackId);
+      }
+    }, 20); // 0.05 * 20 steps = 1.0 over 400ms
+
+    // Schedule fade-out before end
+    const duration = t.audio.end - t.audio.start;
+    const fadeOutAt = Math.max((duration - 0.8) * 1000, 0);
+
+    clearTimeout(audioStopTimer);
+    audioStopTimer = setTimeout(() => {
+      log("stop timer fired: track", trackId);
+      fadeOutTrack();
+    }, fadeOutAt);
   }
 
-  function hideFallback() {
-    if (panelFallback) panelFallback.setAttribute("hidden", "");
+  /**
+   * Fade out and pause.
+   */
+  function fadeOutTrack() {
+    clearInterval(audioFadeInterval);
+    clearTimeout(audioStopTimer);
+
+    if (audioEl.paused) return;
+
+    log("fade-out started");
+    let vol = audioEl.volume;
+    audioFadeInterval = setInterval(() => {
+      vol = Math.max(vol - 0.05, 0);
+      audioEl.volume = vol;
+      if (vol <= 0) {
+        clearInterval(audioFadeInterval);
+        audioFadeInterval = null;
+        audioEl.pause();
+        state.activeTrack = null;
+        log("fade-out complete, paused");
+      }
+    }, 20);
+  }
+
+  /**
+   * Immediately stop playback.
+   */
+  function stopTrack() {
+    clearInterval(audioFadeInterval);
+    audioFadeInterval = null;
+    clearTimeout(audioStopTimer);
+    audioStopTimer = null;
+
+    if (!audioEl.paused) {
+      audioEl.volume = 0;
+      audioEl.pause();
+      log("stopped track:", state.activeTrack);
+    }
+    state.activeTrack = null;
   }
 
   /* ═══════════════════════════════════════════════════════════
-     WEB AUDIO — UI feedback sounds (fallback + ticks)
+     WEB AUDIO — UI feedback sounds (ticks + completion chord)
      ═══════════════════════════════════════════════════════════ */
   let actx = null;
 
@@ -598,24 +282,6 @@
     } catch (e) {
       actx = null;
     }
-  }
-
-  function playNodeSound(trackNum) {
-    if (!actx || !state.soundOn) return;
-    try {
-      const freqMap = { 1: 440, 2: 330, 3: 294, 4: 220, 5: 392, 6: 523 };
-      const osc = actx.createOscillator();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(freqMap[trackNum] || 440, actx.currentTime);
-      const g = actx.createGain();
-      g.gain.setValueAtTime(0, actx.currentTime);
-      g.gain.linearRampToValueAtTime(0.12, actx.currentTime + 0.05);
-      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 1.2);
-      osc.connect(g);
-      g.connect(actx.destination);
-      osc.start();
-      osc.stop(actx.currentTime + 1.5);
-    } catch (e) { /* ignore */ }
   }
 
   function playCompletionSound() {
@@ -663,11 +329,9 @@
     }
     if (name === "sigmap") {
       showTitleFlash();
-      // Kick off SC engine — fully async, does not block UI
-      scEngine.initAll();
     }
     if (name === "finale") {
-      scEngine.stopAllPreviews();
+      stopTrack();
     }
   }
 
@@ -714,7 +378,7 @@
 
   let holdStart = 0;
   let holdRaf = null;
-  let holdContext = null; // "gate" | "unlock" | "finale"
+  let holdContext = null;
 
   function setHolding(isHolding) {
     state.holding = isHolding;
@@ -816,10 +480,10 @@
         panelUnlockLabel.textContent = "Signal Unlocked";
       }
 
-      // Play SC audio — async, handles queuing if widget not ready
+      // Play audio
       if (trackId) {
         log("unlock triggered playback for track", trackId);
-        scEngine.playPreview(trackId);
+        playTrack(trackId);
       }
 
       resetHoldVisuals();
@@ -829,7 +493,7 @@
         setTimeout(() => {
           closePanel();
           setTimeout(() => {
-            scEngine.stopAllPreviews();
+            stopTrack();
             playCompletionSound();
             setState("finale");
           }, 500);
@@ -916,7 +580,7 @@
     if (!t) return;
 
     // Stop any playing preview when opening a new panel
-    scEngine.stopAllPreviews();
+    stopTrack();
 
     state.panelTrackId = trackId;
 
@@ -939,7 +603,6 @@
 
     renderBars($("#panel-bars"), t.signal, t.color);
 
-    // Reset or set unlock state based on whether track is already decoded
     const isDecoded = state.explored.has(trackId);
 
     if (panelFragment) {
@@ -969,11 +632,11 @@
         : "Hold to Unlock Signal";
     }
 
-    // Show/hide fallback based on widget state
+    // Hide fallback by default
     hideFallback();
-    if (scEngine.isTrackFailed(trackId)) {
-      showFallback(trackId);
-    }
+
+    // Preload audio for this track (lazy — only when panel opens)
+    preloadTrack(trackId);
 
     panel.classList.add("is-open");
     panel.setAttribute("aria-hidden", "false");
@@ -999,41 +662,74 @@
     panelUnlock.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
-      // Don't allow re-unlock
       if (panelUnlock.classList.contains("is-unlocked")) return;
 
-      // Global audio unlock (runs on every pointerdown, idempotent)
-      unlockAudio();
+      // Ensure audio is unlocked in this user gesture
+      unlockAudioEl();
+      if (state.soundOn) {
+        initAudio();
+        if (actx && actx.state === "suspended") actx.resume();
+      }
 
-      // CRITICAL: Start SC widget playback NOW within user gesture context.
-      // Mobile browsers require play() in the same call stack as the user event.
-      // We play muted here; completeHold() will seek + fade in after hold timer.
+      // Pre-set src and seek NOW in user gesture context so play() works later
       if (state.soundOn && state.panelTrackId) {
-        const tid = String(state.panelTrackId);
-        const entry = scEngine.widgets[tid];
-        if (entry && entry.ready) {
-          try {
-            entry.widget.setVolume(0);
-            entry.widget.play();
-            log("early play() in user gesture: track", tid);
-          } catch (e) {
-            log("early play() failed: track", tid, e.message);
+        const t = TRACKS[state.panelTrackId];
+        if (t) {
+          if (audioEl.dataset.track !== String(state.panelTrackId)) {
+            audioEl.src = t.audio.src;
+            audioEl.dataset.track = String(state.panelTrackId);
           }
+          audioEl.currentTime = t.audio.start;
+          audioEl.volume = 0;
+          // Start playing muted immediately — in user gesture context
+          audioEl.play().catch(() => {});
+          log("early play() in user gesture: track", state.panelTrackId);
         }
       }
 
       startHold("unlock");
     });
     panelUnlock.addEventListener("pointerup", () => {
-      if (holdContext === "unlock") cancelHold();
+      if (holdContext === "unlock") {
+        // If hold wasn't completed, pause the early-started audio
+        if (!panelUnlock.classList.contains("is-unlocked")) {
+          audioEl.pause();
+          audioEl.volume = 0;
+        }
+        cancelHold();
+      }
     });
     panelUnlock.addEventListener("pointercancel", () => {
-      if (holdContext === "unlock") cancelHold();
+      if (holdContext === "unlock") {
+        audioEl.pause();
+        audioEl.volume = 0;
+        cancelHold();
+      }
     });
     panelUnlock.addEventListener("pointerleave", () => {
-      if (holdContext === "unlock") cancelHold();
+      if (holdContext === "unlock") {
+        audioEl.pause();
+        audioEl.volume = 0;
+        cancelHold();
+      }
     });
     panelUnlock.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+
+  /**
+   * Show fallback link if audio fails.
+   */
+  function showFallback(trackId) {
+    const t = TRACKS[trackId];
+    if (!t || !panelFallback || !panelFallbackLink) return;
+    // Link to the SoundCloud EP
+    panelFallbackLink.href = "https://soundcloud.com/officialulix/sets/dead-frequencies-ep";
+    panelFallback.removeAttribute("hidden");
+    log("fallback shown for track", trackId);
+  }
+
+  function hideFallback() {
+    if (panelFallback) panelFallback.setAttribute("hidden", "");
   }
 
   /* ── Signal bar renderer ────────────────────────────────── */
@@ -1079,7 +775,7 @@
   soundBtn.addEventListener("click", () => {
     state.soundOn = !state.soundOn;
     soundBtn.setAttribute("data-active", String(state.soundOn));
-    if (!state.soundOn) scEngine.stopAllPreviews();
+    if (!state.soundOn) stopTrack();
   });
 
   /* ── Finale Hold-to-Stabilise ───────────────────────────── */

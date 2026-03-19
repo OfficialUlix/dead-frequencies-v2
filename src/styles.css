@@ -742,16 +742,6 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 }
 
 /* ═══════════════════════════════════════════════════════════
-   SC PLAYERS — hidden offscreen
-   ═══════════════════════════════════════════════════════════ */
-#sc-players {
-  position: fixed; left: -9999px; top: 0;
-  width: 300px; height: 600px;
-  overflow: hidden; pointer-events: none;
-}
-#sc-players iframe { display: block; width: 300px; height: 166px; border: none; }
-
-/* ═══════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════ */
 @media (max-width: 380px) {
