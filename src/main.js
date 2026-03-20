@@ -653,12 +653,21 @@
     state.panelOpen = true;
   }
 
+  // Swipe state — declared here so closePanel can reset them
+  let swipeStartY = 0;
+  let swipeDelta = 0;
+  let swipeActive = false;
+  let swipeTracking = false;
+
   function closePanel() {
     panel.classList.remove("is-open");
     panel.setAttribute("aria-hidden", "true");
     state.panelOpen = false;
     state.panelTrackId = null;
     if (holdContext === "unlock") cancelHold();
+    // Reset any in-progress swipe state
+    swipeTracking = false;
+    swipeActive = false;
   }
 
   panelClose.addEventListener("click", closePanel);
@@ -666,6 +675,111 @@
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && state.panelOpen) closePanel();
   });
+
+  /* ═══════════════════════════════════════════════════════════
+     SWIPE UP TO CLOSE — fluid gesture to dismiss panel
+     ═══════════════════════════════════════════════════════════ */
+  const panelShell = $(".panel__shell");
+  const panelBackdrop = $(".panel__backdrop");
+  const SWIPE_THRESHOLD = 80;
+  const SWIPE_ACTIVATE = 12; // min movement before swipe mode engages
+
+  panel.addEventListener("touchstart", (e) => {
+    if (!state.panelOpen) return;
+    // Don't interfere with unlock button hold
+    if (e.target.closest("#panel-unlock")) return;
+    // Don't interfere with active hold
+    if (holdContext === "unlock") return;
+
+    swipeStartY = e.touches[0].clientY;
+    swipeTracking = true;
+    swipeActive = false;
+    swipeDelta = 0;
+  }, { passive: true });
+
+  panel.addEventListener("touchmove", (e) => {
+    if (!swipeTracking) return;
+
+    const currentY = e.touches[0].clientY;
+    const delta = swipeStartY - currentY; // positive = swiping up
+
+    // Only swipe-to-close when moving up and panel content is at scroll top
+    if (delta > 0 && panelShell.scrollTop <= 0) {
+      if (delta > SWIPE_ACTIVATE) {
+        if (!swipeActive) {
+          swipeActive = true;
+          panelShell.style.transition = "none";
+          panelShell.style.willChange = "transform, opacity";
+          panelBackdrop.style.transition = "none";
+        }
+        e.preventDefault();
+
+        swipeDelta = delta;
+        // Dampen: panel follows finger at 60% speed, cap visual shift
+        const translateY = Math.min(delta * 0.6, 220);
+        const scale = Math.max(1 - delta * 0.0004, 0.93);
+        const shellOpacity = Math.max(1 - delta / 400, 0.4);
+        const backdropOpacity = Math.max(1 - delta / 250, 0.2);
+
+        panelShell.style.transform =
+          "translateY(-" + translateY + "px) scale(" + scale + ")";
+        panelShell.style.opacity = String(shellOpacity);
+        panelBackdrop.style.opacity = String(backdropOpacity);
+      }
+    } else if (delta < -8) {
+      // Swiping down — not a close gesture, let normal scroll happen
+      swipeTracking = false;
+    }
+  }, { passive: false });
+
+  panel.addEventListener("touchend", handleSwipeEnd);
+  panel.addEventListener("touchcancel", handleSwipeEnd);
+
+  function handleSwipeEnd() {
+    if (!swipeActive) {
+      swipeTracking = false;
+      return;
+    }
+
+    if (swipeDelta >= SWIPE_THRESHOLD) {
+      // Threshold met — animate out upward, then close
+      panelShell.style.transition =
+        "transform 0.22s ease-out, opacity 0.22s ease-out";
+      panelShell.style.transform = "translateY(-120%) scale(0.92)";
+      panelShell.style.opacity = "0";
+      panelBackdrop.style.transition = "opacity 0.22s ease-out";
+      panelBackdrop.style.opacity = "0";
+
+      setTimeout(() => {
+        closePanel();
+        clearSwipeStyles();
+      }, 230);
+    } else {
+      // Snap back — spring animation to resting position
+      panelShell.style.transition =
+        "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease";
+      panelShell.style.transform = "";
+      panelShell.style.opacity = "";
+      panelBackdrop.style.transition = "opacity 0.3s ease";
+      panelBackdrop.style.opacity = "";
+
+      setTimeout(clearSwipeStyles, 350);
+    }
+
+    swipeTracking = false;
+    swipeActive = false;
+    swipeDelta = 0;
+  }
+
+  function clearSwipeStyles() {
+    if (!panelShell || !panelBackdrop) return;
+    panelShell.style.transition = "";
+    panelShell.style.transform = "";
+    panelShell.style.opacity = "";
+    panelShell.style.willChange = "";
+    panelBackdrop.style.transition = "";
+    panelBackdrop.style.opacity = "";
+  }
 
   /* ── Panel Unlock Button — hold interaction ─────────────── */
   if (panelUnlock) {
