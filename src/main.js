@@ -94,7 +94,6 @@
   const decodedCount = $("#decoded-count");
   const integrityFill = $("#integrity-fill");
   const integrityPct = $("#integrity-pct");
-  const titleFlash = $("#title-flash");
   const holdIndicator = $("#hold-indicator");
   const holdIndicatorFill = $(".hold-indicator__fill");
   const holdIndicatorLabel = $(".hold-indicator__label");
@@ -662,7 +661,6 @@
       soundBtn.classList.add("is-visible");
     }
     if (name === "sigmap") {
-      showTitleFlash();
       playGlitchBurst(0.8, 0.3);
       startDrone();
     }
@@ -672,19 +670,6 @@
       playSignalCollapse();
       startFinaleSequence();
     }
-  }
-
-  /* ── Title Flash ────────────────────────────────────────── */
-  function showTitleFlash() {
-    if (!titleFlash) return;
-    titleFlash.classList.add("is-showing");
-    setTimeout(() => {
-      titleFlash.classList.remove("is-showing");
-      titleFlash.classList.add("is-fading");
-    }, 1800);
-    setTimeout(() => {
-      titleFlash.classList.remove("is-fading");
-    }, 4000);
   }
 
   /* ── Finale Sequence — phased reveal ──────────────────── */

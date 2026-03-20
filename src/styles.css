@@ -362,36 +362,13 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
    ═══════════════════════════════════════════════════════════ */
 .sigmap { background: var(--bg); }
 
-/* Title flash — EP name on map entry */
-.sigmap__title-flash {
-  position: absolute; top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 50; pointer-events: none;
-  font-family: var(--sans); font-weight: 800;
-  font-size: clamp(1.8rem, 10vw, 6rem);
-  text-transform: uppercase; letter-spacing: 0.08em;
-  text-align: center;
-  max-width: 90vw; overflow: hidden;
-  opacity: 0;
-  transition: opacity 0.6s ease;
-}
-.sigmap__title-flash.is-showing { opacity: 1; }
-.sigmap__title-flash.is-fading { opacity: 0; transition-duration: 2s; }
-
-.sigmap__title-primary {
-  position: relative; z-index: 2;
-  text-shadow: 0 0 60px rgba(0,0,0,0.9);
-}
-.sigmap__title-ghost {
-  position: absolute; inset: 0; z-index: 1;
-}
-.sigmap__title-ghost--far {
-  color: var(--cold); opacity: 0.06; mix-blend-mode: screen;
-  transform: translate(-3px, 3px) skewX(-0.6deg); filter: blur(1.5px);
-}
-.sigmap__title-ghost--near {
-  color: var(--warm); opacity: 0.04; mix-blend-mode: screen;
-  transform: translate(2px, -2px) skewX(0.4deg); filter: blur(0.8px);
+/* System label — subtle identity */
+.sigmap__sys-label {
+  position: absolute; top: clamp(2.8rem, 6vw, 3.5rem); left: clamp(1rem, 3vw, 1.5rem);
+  font-family: var(--mono); font-size: 0.42rem;
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--text-faint); opacity: 0.4;
+  pointer-events: none;
 }
 
 .sigmap__field {
@@ -792,7 +769,6 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
    ═══════════════════════════════════════════════════════════ */
 @media (max-width: 380px) {
   .sigmap__field { max-height: 80vh; }
-  .sigmap__title-flash { font-size: clamp(1.4rem, 12vw, 2.5rem); }
 }
 
 @media (min-width: 600px) {
