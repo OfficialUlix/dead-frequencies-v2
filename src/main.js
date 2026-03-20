@@ -434,12 +434,136 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
-     HAPTIC FEEDBACK — vibration patterns for hold interactions
+     TACTILE FEEDBACK — cross-platform feel layer
+     Audio pulses + visual micro-jitter on all browsers.
+     Native vibration where available (feature-detected, silent no-op otherwise).
      ═══════════════════════════════════════════════════════════ */
-  function triggerHaptic(pattern) {
-    if (!navigator.vibrate) return;
-    try { navigator.vibrate(pattern); } catch (e) { /* ignore */ }
-  }
+  const canVibrate = typeof navigator.vibrate === "function";
+  const atmosEl = $(".atmos");
+  let tactileIdx = -1;
+
+  const tactile = {
+    /* Subtle resistance pulse — sub-bass thump + micro-jitter + optional vibrate */
+    pulse(intensity) {
+      if (canVibrate) try { navigator.vibrate(Math.round(intensity * 20)); } catch (e) {}
+      this._thump(intensity);
+      this._jitter(intensity);
+    },
+
+    /* Crisp lock — sharp audiovisual "click into place" */
+    lock() {
+      if (canVibrate) try { navigator.vibrate([15, 40, 25]); } catch (e) {}
+      this._click();
+      this._flash("lock");
+    },
+
+    /* Rough breakup — stuttered noise + visual shake */
+    fail() {
+      if (canVibrate) try { navigator.vibrate([5, 25, 5, 25, 5]); } catch (e) {}
+      this._stutter();
+      this._flash("fail");
+    },
+
+    /* Per-frame during hold — escalating resistance via pulse rate + intensity */
+    resist(progress) {
+      // 8 thresholds, packed denser near lock for urgency
+      const thresholds = [0.15, 0.30, 0.45, 0.60, 0.72, 0.82, 0.90, 0.95];
+      for (let i = 0; i < thresholds.length; i++) {
+        if (progress >= thresholds[i] && tactileIdx < i) {
+          tactileIdx = i;
+          this.pulse(0.3 + i * 0.1);
+        }
+      }
+    },
+
+    reset() { tactileIdx = -1; },
+
+    /* ── Internal: audio ──────────────────────────── */
+    _thump(intensity) {
+      if (!actx || !state.soundOn) return;
+      try {
+        const osc = actx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(35 + intensity * 35, actx.currentTime);
+        const g = actx.createGain();
+        g.gain.setValueAtTime(0.015 + intensity * 0.04, actx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.06 + intensity * 0.04);
+        osc.connect(g);
+        g.connect(actx.destination);
+        osc.start();
+        osc.stop(actx.currentTime + 0.12);
+      } catch (e) {}
+    },
+
+    _click() {
+      if (!actx || !state.soundOn) return;
+      try {
+        // Sharp transient
+        const osc = actx.createOscillator();
+        osc.type = "square";
+        osc.frequency.setValueAtTime(1200, actx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(200, actx.currentTime + 0.04);
+        const g = actx.createGain();
+        g.gain.setValueAtTime(0.06, actx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.06);
+        osc.connect(g);
+        g.connect(actx.destination);
+        osc.start();
+        osc.stop(actx.currentTime + 0.08);
+        // Sub-bass follow-through
+        const sub = actx.createOscillator();
+        sub.type = "sine";
+        sub.frequency.setValueAtTime(50, actx.currentTime);
+        const sg = actx.createGain();
+        sg.gain.setValueAtTime(0.05, actx.currentTime + 0.02);
+        sg.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.12);
+        sub.connect(sg);
+        sg.connect(actx.destination);
+        sub.start(actx.currentTime + 0.02);
+        sub.stop(actx.currentTime + 0.15);
+      } catch (e) {}
+    },
+
+    _stutter() {
+      if (!actx || !state.soundOn) return;
+      createNoiseBuffer();
+      if (!noiseBuffer) return;
+      try {
+        for (let i = 0; i < 4; i++) {
+          const t = actx.currentTime + i * 0.06;
+          const src = actx.createBufferSource();
+          src.buffer = noiseBuffer;
+          const filter = actx.createBiquadFilter();
+          filter.type = "bandpass";
+          filter.frequency.setValueAtTime(600 + i * 400, t);
+          filter.Q.setValueAtTime(2, t);
+          const g = actx.createGain();
+          g.gain.setValueAtTime(0.06, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+          src.connect(filter);
+          filter.connect(g);
+          g.connect(actx.destination);
+          src.start(t);
+          src.stop(t + 0.05);
+        }
+      } catch (e) {}
+    },
+
+    /* ── Internal: visual ─────────────────────────── */
+    _jitter(intensity) {
+      if (!atmosEl) return;
+      const px = (Math.random() - 0.5) * intensity * 3;
+      atmosEl.style.transform = "translate(" + px.toFixed(1) + "px, 0)";
+      setTimeout(() => { atmosEl.style.transform = ""; }, 60);
+    },
+
+    _flash(type) {
+      if (!atmosEl) return;
+      atmosEl.classList.add("is-tactile-" + type);
+      const dur = type === "lock" ? 150 : 250;
+      setTimeout(() => { atmosEl.classList.remove("is-tactile-" + type); }, dur);
+    },
+  };
 
   /* ── State Machine ──────────────────────────────────────── */
   function setState(name) {
@@ -569,7 +693,8 @@
     holdStart = performance.now();
     setHolding(true);
     playHoldTick();
-    triggerHaptic(10);
+    tactile.reset();
+    tactile.pulse(0.3);
     startHoldNoise();
 
     if (context === "gate" && gateHoldZone) {
@@ -598,10 +723,8 @@
     // Update hold noise — cleans up as progress increases
     updateHoldNoise(progress);
 
-    // Haptic pulses at thresholds
-    if (progress > 0.25 && progress < 0.27) triggerHaptic(8);
-    if (progress > 0.50 && progress < 0.52) triggerHaptic(12);
-    if (progress > 0.75 && progress < 0.77) triggerHaptic(16);
+    // Tactile resistance — escalating pulses, denser near lock
+    tactile.resist(progress);
 
     if (holdContext === "gate" && gateProgress) {
       gateProgress.style.width = progress * 100 + "%";
@@ -624,7 +747,7 @@
     if (holdRaf) cancelAnimationFrame(holdRaf);
     holdRaf = null;
     stopHoldNoise();
-    triggerHaptic([20, 60, 30]); // satisfying double-pulse
+    tactile.lock();
 
     /* ── Gate ─────────────────────────────────────────── */
     if (holdContext === "gate") {
@@ -727,7 +850,7 @@
     if (holdRaf) cancelAnimationFrame(holdRaf);
     holdRaf = null;
     stopHoldNoise();
-    triggerHaptic([5, 30, 5, 30, 5]); // rough breakup pattern
+    tactile.fail();
     setHolding(false);
     resetHoldVisuals();
     holdContext = null;
@@ -962,10 +1085,10 @@
       // Swipe up = harsh disconnect FX
       if (dir === "up") {
         playSignalCollapse();
-        triggerHaptic([10, 30, 10]);
+        tactile.fail();
       } else {
-        // Swipe down = controlled exit, gentle haptic
-        triggerHaptic(15);
+        // Swipe down = controlled exit
+        tactile.pulse(0.4);
       }
 
       panelShell.style.transition =

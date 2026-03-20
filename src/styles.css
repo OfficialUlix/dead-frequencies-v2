@@ -149,6 +149,15 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   transition: opacity 2s ease;
 }
 
+/* Tactile feedback — visual layer (cross-platform) */
+.atmos.is-tactile-lock {
+  filter: brightness(1.15);
+  transition: filter 0.08s ease-out;
+}
+.atmos.is-tactile-fail {
+  animation: tactile-shake 0.22s steps(5, end) 1;
+}
+
 /* CRT interference — rare horizontal tear */
 .atmos__interference {
   position: absolute; left: 0; right: 0;
@@ -827,6 +836,15 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
   0% { transform: translate(0, 0); }
   33% { transform: translate(-0.4px, 0.2px); }
   66% { transform: translate(0.4px, -0.2px); }
+  100% { transform: translate(0, 0); }
+}
+
+@keyframes tactile-shake {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-2px, 0.5px); }
+  40% { transform: translate(1.5px, -0.5px); }
+  60% { transform: translate(-1px, 0.5px); }
+  80% { transform: translate(1px, -0.3px); }
   100% { transform: translate(0, 0); }
 }
 
