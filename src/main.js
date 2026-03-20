@@ -797,17 +797,6 @@
       }
 
       resetHoldVisuals();
-
-      // All 6 decoded → immediate transition to finale
-      if (state.explored.size === 6) {
-        log("all signals decoded — entering finale");
-        fadeOutTrack();
-        closePanel();
-        setTimeout(() => {
-          playCompletionSound();
-          setState("finale");
-        }, 600);
-      }
     }
 
     /* ── Finale ──────────────────────────────────────── */
@@ -968,6 +957,7 @@
   let swipeTracking = false;
 
   function closePanel() {
+    const allDecoded = state.explored.size === 6;
     panel.classList.remove("is-open");
     panel.setAttribute("aria-hidden", "true");
     state.panelOpen = false;
@@ -976,6 +966,15 @@
     // Reset any in-progress swipe state
     swipeTracking = false;
     swipeActive = false;
+
+    // All 6 decoded — enter finale when panel closes
+    if (allDecoded && state.currentState !== "finale") {
+      fadeOutTrack();
+      setTimeout(() => {
+        playCompletionSound();
+        setState("finale");
+      }, 600);
+    }
   }
 
   panelClose.addEventListener("click", closePanel);
