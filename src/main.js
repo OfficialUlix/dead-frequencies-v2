@@ -798,26 +798,15 @@
 
       resetHoldVisuals();
 
-      // Check completion → finale
-      // Let audio play fully, fade naturally, then transition gently
+      // All 6 decoded → immediate transition to finale
       if (state.explored.size === 6) {
-        const t = TRACKS[trackId];
-        // Audio fade-out is already scheduled by playTrack (0.8s before end)
-        // Wait for full preview duration so audio completes naturally
-        const previewDuration = t ? (t.audio.end - t.audio.start) * 1000 : 10000;
-        // Add breathing room after audio ends
-        const afterAudio = previewDuration + 1800;
-        log("final track — waiting", afterAudio, "ms for audio to finish naturally");
-
+        log("all signals decoded — entering finale");
+        fadeOutTrack();
+        closePanel();
         setTimeout(() => {
-          // Close panel gently
-          closePanel();
-          // Longer pause — let the emptiness sit
-          setTimeout(() => {
-            playCompletionSound();
-            setState("finale");
-          }, 1800);
-        }, afterAudio);
+          playCompletionSound();
+          setState("finale");
+        }, 600);
       }
     }
 
