@@ -70,7 +70,7 @@
 
   /* ── State ──────────────────────────────────────────────── */
   const state = {
-    soundOn: true,
+    soundOn: false,
     explored: new Set(),
     panelOpen: false,
     panelTrackId: null,
@@ -753,18 +753,16 @@
   const gateSoundToggle = $("#gate-sound-toggle");
   if (gateSoundToggle) {
     gateSoundToggle.addEventListener("click", () => {
+      // Always init audio on any tap — user gesture context
+      unlockAudioEl();
+      initAudio();
+      if (actx && actx.state === "suspended") actx.resume();
+
       state.soundOn = !state.soundOn;
       gateSoundToggle.dataset.on = String(state.soundOn);
+      gateSoundToggle.dataset.tapped = "true";
       const label = $(".gate__sound-label", gateSoundToggle);
-      const icon = $(".gate__sound-icon", gateSoundToggle);
-      if (label) label.textContent = state.soundOn ? "Sound On" : "Sound Off";
-      if (icon) icon.innerHTML = state.soundOn ? "&#9835;" : "&#9838;";
-      // Init audio in user gesture context
-      if (state.soundOn) {
-        unlockAudioEl();
-        initAudio();
-        if (actx && actx.state === "suspended") actx.resume();
-      }
+      if (label) label.textContent = state.soundOn ? "Sound on" : "Sound off";
     });
   }
 
