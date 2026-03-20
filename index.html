@@ -55,10 +55,10 @@
         </div>
 
         <div class="gate__controls">
-          <div class="gate__sound-row">
-            <button class="gate__snd" data-sound="off"><span>&#9838;</span> Sound Off</button>
-            <button class="gate__snd gate__snd--active" data-sound="on"><span>&#9835;</span> Sound On</button>
-          </div>
+          <button class="gate__sound-toggle" id="gate-sound-toggle" data-on="true">
+            <span class="gate__sound-icon">&#9835;</span>
+            <span class="gate__sound-label">Sound On</span>
+          </button>
 
           <!-- HOLD to begin — not click -->
           <div class="gate__hold-zone" id="gate-hold">

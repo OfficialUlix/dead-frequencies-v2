@@ -87,7 +87,6 @@
   const gateControls = $(".gate__controls");
   const gateHoldZone = $("#gate-hold");
   const gateProgress = $(".gate__hold-progress");
-  const gateSndBtns = $$(".gate__snd");
   const soundBtn = $(".sound-btn");
   const nodes = $$(".node");
   const panel = $("#panel");
@@ -750,14 +749,24 @@
     setTimeout(() => gateControls.classList.add("is-revealed"), last + 700);
   }
 
-  /* ── Gate Sound Choice ──────────────────────────────────── */
-  gateSndBtns.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      gateSndBtns.forEach((b) => b.classList.remove("gate__snd--active"));
-      btn.classList.add("gate__snd--active");
-      state.soundOn = btn.dataset.sound === "on";
+  /* ── Gate Sound Toggle ────────────────────────────────────── */
+  const gateSoundToggle = $("#gate-sound-toggle");
+  if (gateSoundToggle) {
+    gateSoundToggle.addEventListener("click", () => {
+      state.soundOn = !state.soundOn;
+      gateSoundToggle.dataset.on = String(state.soundOn);
+      const label = $(".gate__sound-label", gateSoundToggle);
+      const icon = $(".gate__sound-icon", gateSoundToggle);
+      if (label) label.textContent = state.soundOn ? "Sound On" : "Sound Off";
+      if (icon) icon.innerHTML = state.soundOn ? "&#9835;" : "&#9838;";
+      // Init audio in user gesture context
+      if (state.soundOn) {
+        unlockAudioEl();
+        initAudio();
+        if (actx && actx.state === "suspended") actx.resume();
+      }
     });
-  });
+  }
 
   /* ═══════════════════════════════════════════════════════════
      HOLD ENGINE — used by gate, panel unlock, and finale
@@ -842,10 +851,6 @@
 
     /* ── Gate ─────────────────────────────────────────── */
     if (holdContext === "gate") {
-      if (state.soundOn) {
-        initAudio();
-        if (actx && actx.state === "suspended") actx.resume();
-      }
       soundBtn.setAttribute("data-active", String(state.soundOn));
       setState("sigmap");
       resetHoldVisuals();
@@ -945,6 +950,12 @@
     gateHoldZone.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
+      // Init audio in user gesture context — critical for iOS
+      if (state.soundOn) {
+        unlockAudioEl();
+        initAudio();
+        if (actx && actx.state === "suspended") actx.resume();
+      }
       startHold("gate");
     });
     gateHoldZone.addEventListener("pointerup", () => {

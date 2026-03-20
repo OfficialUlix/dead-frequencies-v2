@@ -282,18 +282,21 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 }
 .gate__controls.is-revealed { opacity: 1; transform: translateY(0); }
 
-.gate__sound-row { display: flex; gap: 0.5rem; margin-bottom: 1.6rem; }
-
-.gate__snd {
-  display: flex; align-items: center; gap: 0.4rem;
-  padding: 0.45rem 0.8rem;
+.gate__sound-toggle {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.45rem 0.9rem; margin-bottom: 1.6rem;
   font-family: var(--mono); font-size: 0.65rem;
   letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--text-faint); border: 1px solid var(--line); border-radius: 3px;
   transition: color 0.2s, border-color 0.2s, background 0.2s;
 }
-.gate__snd:hover { color: var(--text-dim); border-color: var(--line-strong); }
-.gate__snd--active { color: var(--text); border-color: rgba(131,215,255,0.28); background: rgba(131,215,255,0.04); }
+.gate__sound-toggle:hover { color: var(--text-dim); border-color: var(--line-strong); }
+.gate__sound-toggle[data-on="true"] {
+  color: var(--text); border-color: rgba(131,215,255,0.28); background: rgba(131,215,255,0.04);
+}
+.gate__sound-toggle[data-on="false"] {
+  color: var(--text-faint); border-color: var(--line); background: transparent;
+}
 
 /* Hold zone — replaces click button */
 .gate__hold-zone {
