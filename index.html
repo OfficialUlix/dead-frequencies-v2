@@ -178,41 +178,27 @@
     </div>
 
     <!-- ═══════════════════════════════════════════
-         FINALE — hold-to-stabilise the final message
+         FINALE — phased reveal: signal lost → hold → WE REMAIN
          ═══════════════════════════════════════════ -->
     <section class="finale" id="finale" data-holding="false">
       <div class="finale__content">
-        <div class="finale__signal-prompt">
-          <p class="finale__signal-text">A final signal remains.</p>
-          <p class="finale__signal-hint">Hold to stabilise.</p>
+        <!-- Phased center text — one at a time -->
+        <div class="finale__center">
+          <p class="finale__phase" id="finale-lost">signal lost</p>
+          <p class="finale__phase" id="finale-detected">residual frequency detected</p>
+          <div class="finale__phase" id="finale-hold-prompt">
+            <p class="finale__hold-label">Hold to stabilise</p>
+          </div>
+          <p class="finale__phase finale__reveal-title" id="finale-reveal">WE REMAIN</p>
         </div>
 
-        <blockquote class="finale__quote corrupted">
-          <p class="finale__text">
-            Even when everything fails —<br />
-            systems, connections, identity, stability —<br />
-            <em>the human signal doesn't disappear.</em>
-          </p>
-          <footer class="finale__coda">
-            <span class="finale__rule" aria-hidden="true"></span>
-            <p>It survives the noise.</p>
-            <p>It survives the silence.</p>
-          </footer>
-        </blockquote>
-
+        <!-- CTA — revealed after hold -->
         <div class="finale__cta-block">
-          <p class="finale__status">TRANSMISSION COMPLETE</p>
-          <p class="finale__ep-title">Dead Frequencies</p>
-          <p class="finale__ep-sub">6 tracks // 2026</p>
-          <a class="finale__stream" href="https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing" target="_blank" rel="noreferrer">
-            <span class="finale__stream-text">Stream Now</span>
-            <span class="finale__stream-glitch" aria-hidden="true">Stream Now</span>
-          </a>
+          <a class="finale__listen" href="https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing" target="_blank" rel="noreferrer">Listen</a>
           <nav class="finale__links">
             <a class="finale__link" href="https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing" target="_blank" rel="noreferrer"><span class="finale__link-dot"></span> SoundCloud</a>
             <button class="finale__link" id="revisit-btn"><span class="finale__link-dot"></span> Revisit Signals</button>
           </nav>
-          <p class="finale__persist">signal.persists();</p>
         </div>
       </div>
     </section>

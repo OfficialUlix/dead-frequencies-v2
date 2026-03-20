@@ -76,6 +76,7 @@
     panelTrackId: null,
     currentState: "gate",
     holding: false,
+    finaleReady: false,
     finaleStabilised: false,
     activeTrack: null,
   };
@@ -99,8 +100,6 @@
   const holdIndicatorFill = $(".hold-indicator__fill");
   const holdIndicatorLabel = $(".hold-indicator__label");
   const revisitBtn = $("#revisit-btn");
-  const finaleQuote = $(".finale__quote");
-  const finalePrompt = $(".finale__signal-prompt");
   const finaleCta = $(".finale__cta-block");
   const panelFragment = $("#panel-fragment");
   const panelUnlock = $("#panel-unlock");
@@ -332,6 +331,7 @@
     }
     if (name === "finale") {
       stopTrack();
+      startFinaleSequence();
     }
   }
 
@@ -346,6 +346,43 @@
     setTimeout(() => {
       titleFlash.classList.remove("is-fading");
     }, 4000);
+  }
+
+  /* ── Finale Sequence — phased reveal ──────────────────── */
+  function startFinaleSequence() {
+    const lost = $("#finale-lost");
+    const detected = $("#finale-detected");
+    const holdPrompt = $("#finale-hold-prompt");
+
+    state.finaleReady = false;
+    state.finaleStabilised = false;
+
+    // Phase 1: "signal lost" fades in
+    setTimeout(() => {
+      if (lost) lost.classList.add("is-visible");
+    }, 800);
+
+    // Phase 1→2: fade out "signal lost"
+    setTimeout(() => {
+      if (lost) lost.classList.remove("is-visible");
+    }, 3200);
+
+    // Phase 2: "residual frequency detected" fades in
+    setTimeout(() => {
+      if (detected) detected.classList.add("is-visible");
+    }, 4200);
+
+    // Phase 2→3: fade out "detected"
+    setTimeout(() => {
+      if (detected) detected.classList.remove("is-visible");
+    }, 6500);
+
+    // Phase 3: "Hold to stabilise" — clear and legible
+    setTimeout(() => {
+      if (holdPrompt) holdPrompt.classList.add("is-visible");
+      state.finaleReady = true;
+      log("finale ready for hold interaction");
+    }, 7500);
   }
 
   /* ── Gate Boot ──────────────────────────────────────────── */
@@ -489,25 +526,25 @@
       resetHoldVisuals();
 
       // Check completion → finale
-      // Wait for the preview to finish its full window, then pause before transitioning
+      // Let audio play fully, fade naturally, then transition gently
       if (state.explored.size === 6) {
         const t = TRACKS[trackId];
-        // Calculate how long the preview plays (in ms)
+        // Audio fade-out is already scheduled by playTrack (0.8s before end)
+        // Wait for full preview duration so audio completes naturally
         const previewDuration = t ? (t.audio.end - t.audio.start) * 1000 : 10000;
-        const waitForPreview = Math.min(previewDuration, 20000);
-        // Let the preview play its full window, then add 2s breathing room
-        const transitionDelay = waitForPreview + 2000;
-        log("final track — waiting", transitionDelay, "ms before finale transition");
+        // Add breathing room after audio ends
+        const afterAudio = previewDuration + 1800;
+        log("final track — waiting", afterAudio, "ms for audio to finish naturally");
 
         setTimeout(() => {
+          // Close panel gently
           closePanel();
-          // 1s pause after panel closes — let the moment breathe
+          // Longer pause — let the emptiness sit
           setTimeout(() => {
-            stopTrack();
             playCompletionSound();
             setState("finale");
-          }, 1000);
-        }, transitionDelay);
+          }, 1800);
+        }, afterAudio);
       }
     }
 
@@ -515,14 +552,20 @@
     else if (holdContext === "finale") {
       if (!state.finaleStabilised) {
         state.finaleStabilised = true;
-        if (finaleQuote) {
-          finaleQuote.classList.remove("corrupted");
-          finaleQuote.classList.add("is-stable");
-        }
-        if (finalePrompt) finalePrompt.classList.add("is-hidden");
+
+        // Hide hold prompt, reveal "WE REMAIN"
+        const holdPrompt = $("#finale-hold-prompt");
+        const reveal = $("#finale-reveal");
+
+        if (holdPrompt) holdPrompt.classList.remove("is-visible");
+        setTimeout(() => {
+          if (reveal) reveal.classList.add("is-visible");
+        }, 400);
+
+        // After a pause, show clean CTA
         setTimeout(() => {
           if (finaleCta) finaleCta.classList.add("is-revealed");
-        }, 800);
+        }, 2000);
       }
       resetHoldVisuals();
     }
@@ -906,6 +949,7 @@
   finaleEl.addEventListener("pointerdown", (e) => {
     if (e.button !== 0) return;
     if (state.currentState !== "finale" || state.finaleStabilised) return;
+    if (!state.finaleReady) return;
     startHold("finale");
   });
   finaleEl.addEventListener("pointerup", () => {
