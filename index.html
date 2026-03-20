@@ -17,6 +17,7 @@
     <div class="atmos" aria-hidden="true">
       <div class="atmos__grain"></div>
       <div class="atmos__scanline"></div>
+      <div class="atmos__interference"></div>
       <div class="atmos__vignette"></div>
       <div class="atmos__glow"></div>
     </div>
@@ -43,12 +44,14 @@
       <div class="gate__static" aria-hidden="true"></div>
       <div class="gate__content">
         <div class="gate__boot" aria-live="polite">
-          <p class="gate__line" data-delay="300"><span class="g-prompt">&gt;</span> Initialising signal decoder...</p>
-          <p class="gate__line" data-delay="900"><span class="g-prompt">&gt;</span> Frequency: <span class="g-val g-val--cold">UNKNOWN</span></p>
-          <p class="gate__line" data-delay="1500"><span class="g-prompt">&gt;</span> Source: <span class="g-val g-val--warm">UNVERIFIED</span></p>
-          <p class="gate__line" data-delay="2100"><span class="g-prompt">&gt;</span> Signal integrity: <span class="g-val g-val--warn">DEGRADING</span></p>
-          <p class="gate__line" data-delay="2700"><span class="g-prompt">&gt;</span> Status: <span class="g-val g-val--crit">UNSTABLE</span></p>
-          <p class="gate__line gate__line--ready" data-delay="3500"><span class="g-prompt">&gt;</span> Ready to receive transmission_</p>
+          <p class="gate__line" data-delay="200"><span class="g-prompt">&gt;</span> SIGPROTO v0.7.3 — initialising decoder</p>
+          <p class="gate__line" data-delay="700" data-glitch><span class="g-prompt">&gt;</span> Scanning bands: <span class="g-val g-val--cold">47.3 kHz — 891.2 kHz</span></p>
+          <p class="gate__line" data-delay="1200"><span class="g-prompt">&gt;</span> Band response: <span class="g-val g-val--cold">6 signals locked</span></p>
+          <p class="gate__line" data-delay="1700" data-glitch><span class="g-prompt">&gt;</span> Packet loss: <span class="g-val g-val--warn">38% — frames corrupted</span></p>
+          <p class="gate__line" data-delay="2200"><span class="g-prompt">&gt;</span> Source authentication: <span class="g-val g-val--warm">UNVERIFIED ORIGIN</span></p>
+          <p class="gate__line" data-delay="2700" data-glitch><span class="g-prompt">&gt;</span> Signal integrity: <span class="g-val g-val--crit">DEGRADING — 0.4s DROPOUT</span></p>
+          <p class="gate__line" data-delay="3300"><span class="g-prompt">&gt;</span> Human signature check: <span class="g-val g-val--warn">NON-STANDARD PATTERN</span></p>
+          <p class="gate__line gate__line--ready" data-delay="4000"><span class="g-prompt">&gt;</span> awaiting manual input to proceed_</p>
         </div>
 
         <div class="gate__controls">

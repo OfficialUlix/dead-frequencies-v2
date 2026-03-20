@@ -318,6 +318,129 @@
     } catch (e) { /* ignore */ }
   }
 
+  /* ═══════════════════════════════════════════════════════════
+     SIGNAL FX ENGINE — procedural glitch/noise via Web Audio
+     ═══════════════════════════════════════════════════════════ */
+  let noiseBuffer = null;
+
+  function createNoiseBuffer() {
+    if (!actx || noiseBuffer) return;
+    const len = actx.sampleRate * 2;
+    noiseBuffer = actx.createBuffer(1, len, actx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  }
+
+  function makeDistortionCurve(amount) {
+    const n = 256;
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
+    }
+    return curve;
+  }
+
+  function playGlitchBurst(intensity, duration) {
+    if (!actx || !state.soundOn) return;
+    createNoiseBuffer();
+    if (!noiseBuffer) return;
+    try {
+      const src = actx.createBufferSource();
+      src.buffer = noiseBuffer;
+      const filter = actx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(800 + intensity * 2000, actx.currentTime);
+      filter.Q.setValueAtTime(1 + intensity * 3, actx.currentTime);
+      const dist = actx.createWaveShaper();
+      dist.curve = makeDistortionCurve(intensity * 40);
+      const gain = actx.createGain();
+      const vol = Math.min(intensity * 0.12, 0.15);
+      gain.gain.setValueAtTime(vol, actx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + duration);
+      src.connect(filter);
+      filter.connect(dist);
+      dist.connect(gain);
+      gain.connect(actx.destination);
+      src.start();
+      src.stop(actx.currentTime + duration);
+    } catch (e) { /* ignore */ }
+  }
+
+  function playSignalCollapse() {
+    if (!actx || !state.soundOn) return;
+    createNoiseBuffer();
+    if (!noiseBuffer) return;
+    try {
+      const src = actx.createBufferSource();
+      src.buffer = noiseBuffer;
+      const filter = actx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(4000, actx.currentTime);
+      filter.frequency.exponentialRampToValueAtTime(80, actx.currentTime + 0.6);
+      const gain = actx.createGain();
+      gain.gain.setValueAtTime(0.1, actx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.7);
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(actx.destination);
+      src.start();
+      src.stop(actx.currentTime + 0.8);
+    } catch (e) { /* ignore */ }
+  }
+
+  // Sustained noise during hold — starts harsh, cleans up with progress
+  let holdNoiseSrc = null;
+  let holdNoiseGain = null;
+  let holdNoiseFilter = null;
+
+  function startHoldNoise() {
+    if (!actx || !state.soundOn) return;
+    createNoiseBuffer();
+    if (!noiseBuffer) return;
+    try {
+      holdNoiseSrc = actx.createBufferSource();
+      holdNoiseSrc.buffer = noiseBuffer;
+      holdNoiseSrc.loop = true;
+      holdNoiseFilter = actx.createBiquadFilter();
+      holdNoiseFilter.type = "lowpass";
+      holdNoiseFilter.frequency.setValueAtTime(3000, actx.currentTime);
+      holdNoiseGain = actx.createGain();
+      holdNoiseGain.gain.setValueAtTime(0.04, actx.currentTime);
+      holdNoiseSrc.connect(holdNoiseFilter);
+      holdNoiseFilter.connect(holdNoiseGain);
+      holdNoiseGain.connect(actx.destination);
+      holdNoiseSrc.start();
+    } catch (e) { /* ignore */ }
+  }
+
+  function updateHoldNoise(progress) {
+    if (!holdNoiseFilter || !holdNoiseGain) return;
+    try {
+      // As progress increases, filter cleans up (frequency drops) and volume drops
+      const freq = 3000 - progress * 2600; // 3000 → 400
+      const vol = 0.04 - progress * 0.035; // 0.04 → 0.005
+      holdNoiseFilter.frequency.setValueAtTime(Math.max(freq, 100), actx.currentTime);
+      holdNoiseGain.gain.setValueAtTime(Math.max(vol, 0.002), actx.currentTime);
+    } catch (e) { /* ignore */ }
+  }
+
+  function stopHoldNoise() {
+    try {
+      if (holdNoiseSrc) { holdNoiseSrc.stop(); holdNoiseSrc = null; }
+      holdNoiseGain = null;
+      holdNoiseFilter = null;
+    } catch (e) { /* ignore */ }
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     HAPTIC FEEDBACK — vibration patterns for hold interactions
+     ═══════════════════════════════════════════════════════════ */
+  function triggerHaptic(pattern) {
+    if (!navigator.vibrate) return;
+    try { navigator.vibrate(pattern); } catch (e) { /* ignore */ }
+  }
+
   /* ── State Machine ──────────────────────────────────────── */
   function setState(name) {
     state.currentState = name;
@@ -328,9 +451,11 @@
     }
     if (name === "sigmap") {
       showTitleFlash();
+      playGlitchBurst(0.8, 0.3); // harsh entry spike
     }
     if (name === "finale") {
       stopTrack();
+      playSignalCollapse(); // descending noise on finale entry
       startFinaleSequence();
     }
   }
@@ -389,7 +514,20 @@
   function runBoot() {
     gateLines.forEach((line) => {
       const d = parseInt(line.dataset.delay, 10) || 0;
-      setTimeout(() => line.classList.add("is-typed"), d);
+      const hasGlitch = line.hasAttribute("data-glitch");
+
+      if (hasGlitch) {
+        // Glitch: briefly show corrupted, then settle into typed
+        setTimeout(() => {
+          line.classList.add("is-glitching");
+          setTimeout(() => {
+            line.classList.remove("is-glitching");
+            line.classList.add("is-typed");
+          }, 180);
+        }, d);
+      } else {
+        setTimeout(() => line.classList.add("is-typed"), d);
+      }
     });
     const last = Math.max(
       ...gateLines.map((l) => parseInt(l.dataset.delay, 10) || 0)
@@ -431,6 +569,8 @@
     holdStart = performance.now();
     setHolding(true);
     playHoldTick();
+    triggerHaptic(10);
+    startHoldNoise();
 
     if (context === "gate" && gateHoldZone) {
       gateHoldZone.classList.add("is-holding");
@@ -455,6 +595,14 @@
 
     const progress = Math.min(elapsed / duration, 1);
 
+    // Update hold noise — cleans up as progress increases
+    updateHoldNoise(progress);
+
+    // Haptic pulses at thresholds
+    if (progress > 0.25 && progress < 0.27) triggerHaptic(8);
+    if (progress > 0.50 && progress < 0.52) triggerHaptic(12);
+    if (progress > 0.75 && progress < 0.77) triggerHaptic(16);
+
     if (holdContext === "gate" && gateProgress) {
       gateProgress.style.width = progress * 100 + "%";
     }
@@ -475,6 +623,8 @@
   function completeHold() {
     if (holdRaf) cancelAnimationFrame(holdRaf);
     holdRaf = null;
+    stopHoldNoise();
+    triggerHaptic([20, 60, 30]); // satisfying double-pulse
 
     /* ── Gate ─────────────────────────────────────────── */
     if (holdContext === "gate") {
@@ -576,6 +726,8 @@
   function cancelHold() {
     if (holdRaf) cancelAnimationFrame(holdRaf);
     holdRaf = null;
+    stopHoldNoise();
+    triggerHaptic([5, 30, 5, 30, 5]); // rough breakup pattern
     setHolding(false);
     resetHoldVisuals();
     holdContext = null;
@@ -694,6 +846,7 @@
     panel.classList.add("is-open");
     panel.setAttribute("aria-hidden", "false");
     state.panelOpen = true;
+    playGlitchBurst(0.3, 0.15); // light glitch on panel open
   }
 
   // Swipe state — declared here so closePanel can reset them
@@ -720,58 +873,75 @@
   });
 
   /* ═══════════════════════════════════════════════════════════
-     SWIPE UP TO CLOSE — fluid gesture to dismiss panel
+     SWIPE TO CLOSE — bidirectional gesture to dismiss panel
+     Up = harsh disconnect, Down = controlled exit
      ═══════════════════════════════════════════════════════════ */
   const panelShell = $(".panel__shell");
   const panelBackdrop = $(".panel__backdrop");
   const SWIPE_THRESHOLD = 80;
-  const SWIPE_ACTIVATE = 12; // min movement before swipe mode engages
+  const SWIPE_ACTIVATE = 12;
+  let swipeDirection = null; // "up" or "down"
 
   panel.addEventListener("touchstart", (e) => {
     if (!state.panelOpen) return;
-    // Don't interfere with unlock button hold
     if (e.target.closest("#panel-unlock")) return;
-    // Don't interfere with active hold
     if (holdContext === "unlock") return;
 
     swipeStartY = e.touches[0].clientY;
     swipeTracking = true;
     swipeActive = false;
     swipeDelta = 0;
+    swipeDirection = null;
   }, { passive: true });
 
   panel.addEventListener("touchmove", (e) => {
     if (!swipeTracking) return;
 
     const currentY = e.touches[0].clientY;
-    const delta = swipeStartY - currentY; // positive = swiping up
+    const rawDelta = swipeStartY - currentY; // positive = finger moving up
 
-    // Only swipe-to-close when moving up and panel content is at scroll top
-    if (delta > 0 && panelShell.scrollTop <= 0) {
-      if (delta > SWIPE_ACTIVATE) {
-        if (!swipeActive) {
-          swipeActive = true;
-          panelShell.style.transition = "none";
-          panelShell.style.willChange = "transform, opacity";
-          panelBackdrop.style.transition = "none";
+    // Determine direction on first significant movement
+    if (!swipeDirection && Math.abs(rawDelta) > SWIPE_ACTIVATE) {
+      if (rawDelta > 0 && panelShell.scrollTop <= 0) {
+        swipeDirection = "up";
+      } else if (rawDelta < 0) {
+        // Allow swipe down only if at scroll bottom or content not scrollable
+        const atBottom = panelShell.scrollHeight - panelShell.scrollTop - panelShell.clientHeight < 2;
+        if (atBottom) {
+          swipeDirection = "down";
+        } else {
+          swipeTracking = false;
+          return;
         }
-        e.preventDefault();
-
-        swipeDelta = delta;
-        // Dampen: panel follows finger at 60% speed, cap visual shift
-        const translateY = Math.min(delta * 0.6, 220);
-        const scale = Math.max(1 - delta * 0.0004, 0.93);
-        const shellOpacity = Math.max(1 - delta / 400, 0.4);
-        const backdropOpacity = Math.max(1 - delta / 250, 0.2);
-
-        panelShell.style.transform =
-          "translateY(-" + translateY + "px) scale(" + scale + ")";
-        panelShell.style.opacity = String(shellOpacity);
-        panelBackdrop.style.opacity = String(backdropOpacity);
+      } else {
+        swipeTracking = false;
+        return;
       }
-    } else if (delta < -8) {
-      // Swiping down — not a close gesture, let normal scroll happen
-      swipeTracking = false;
+    }
+
+    if (!swipeDirection) return;
+
+    const absDelta = Math.abs(rawDelta);
+    if (absDelta > SWIPE_ACTIVATE) {
+      if (!swipeActive) {
+        swipeActive = true;
+        panelShell.style.transition = "none";
+        panelShell.style.willChange = "transform, opacity";
+        panelBackdrop.style.transition = "none";
+      }
+      e.preventDefault();
+
+      swipeDelta = absDelta;
+      const translateY = Math.min(absDelta * 0.6, 220);
+      const scale = Math.max(1 - absDelta * 0.0004, 0.93);
+      const shellOpacity = Math.max(1 - absDelta / 400, 0.4);
+      const backdropOpacity = Math.max(1 - absDelta / 250, 0.2);
+
+      const direction = swipeDirection === "up" ? -1 : 1;
+      panelShell.style.transform =
+        "translateY(" + (direction * translateY) + "px) scale(" + scale + ")";
+      panelShell.style.opacity = String(shellOpacity);
+      panelBackdrop.style.opacity = String(backdropOpacity);
     }
   }, { passive: false });
 
@@ -781,14 +951,26 @@
   function handleSwipeEnd() {
     if (!swipeActive) {
       swipeTracking = false;
+      swipeDirection = null;
       return;
     }
 
     if (swipeDelta >= SWIPE_THRESHOLD) {
-      // Threshold met — animate out upward, then close
+      const dir = swipeDirection;
+      const exitY = dir === "up" ? "-120%" : "120%";
+
+      // Swipe up = harsh disconnect FX
+      if (dir === "up") {
+        playSignalCollapse();
+        triggerHaptic([10, 30, 10]);
+      } else {
+        // Swipe down = controlled exit, gentle haptic
+        triggerHaptic(15);
+      }
+
       panelShell.style.transition =
         "transform 0.22s ease-out, opacity 0.22s ease-out";
-      panelShell.style.transform = "translateY(-120%) scale(0.92)";
+      panelShell.style.transform = "translateY(" + exitY + ") scale(0.92)";
       panelShell.style.opacity = "0";
       panelBackdrop.style.transition = "opacity 0.22s ease-out";
       panelBackdrop.style.opacity = "0";
@@ -798,7 +980,7 @@
         clearSwipeStyles();
       }, 230);
     } else {
-      // Snap back — spring animation to resting position
+      // Snap back
       panelShell.style.transition =
         "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease";
       panelShell.style.transform = "";
@@ -812,6 +994,7 @@
     swipeTracking = false;
     swipeActive = false;
     swipeDelta = 0;
+    swipeDirection = null;
   }
 
   function clearSwipeStyles() {
