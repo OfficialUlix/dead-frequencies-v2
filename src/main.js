@@ -180,6 +180,7 @@
 
     log("playTrack:", trackId, t.title, "from", t.audio.start, "to", t.audio.end);
     state.activeTrack = trackId;
+    duckDrone();
 
     // Set source if needed
     if (audioEl.dataset.track !== String(trackId)) {
@@ -248,6 +249,7 @@
         audioEl.pause();
         state.activeTrack = null;
         log("fade-out complete, paused");
+        unduckDrone();
       }
     }, 20);
   }
@@ -267,6 +269,7 @@
       log("stopped track:", state.activeTrack);
     }
     state.activeTrack = null;
+    unduckDrone();
   }
 
   /* ═══════════════════════════════════════════════════════════
@@ -434,6 +437,92 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
+     AMBIENT DRONE — sub-bass texture on sigmap when no track plays
+     ═══════════════════════════════════════════════════════════ */
+  let droneOsc = null;
+  let droneNoise = null;
+  let droneGain = null;
+  let droneActive = false;
+  const DRONE_VOL = 0.045;
+
+  function startDrone() {
+    if (droneActive || !actx || !state.soundOn) return;
+    createNoiseBuffer();
+    try {
+      droneGain = actx.createGain();
+      droneGain.gain.setValueAtTime(0, actx.currentTime);
+      droneGain.gain.linearRampToValueAtTime(DRONE_VOL, actx.currentTime + 1.5);
+      droneGain.connect(actx.destination);
+
+      // Sub-bass oscillator — slow LFO modulated
+      droneOsc = actx.createOscillator();
+      droneOsc.type = "sine";
+      droneOsc.frequency.setValueAtTime(42, actx.currentTime);
+      const lfo = actx.createOscillator();
+      lfo.type = "sine";
+      lfo.frequency.setValueAtTime(0.15, actx.currentTime);
+      const lfoGain = actx.createGain();
+      lfoGain.gain.setValueAtTime(6, actx.currentTime);
+      lfo.connect(lfoGain);
+      lfoGain.connect(droneOsc.frequency);
+      lfo.start();
+      droneOsc._lfo = lfo;
+
+      const oscGain = actx.createGain();
+      oscGain.gain.setValueAtTime(0.7, actx.currentTime);
+      droneOsc.connect(oscGain);
+      oscGain.connect(droneGain);
+      droneOsc.start();
+
+      // Filtered noise layer — dark texture
+      if (noiseBuffer) {
+        droneNoise = actx.createBufferSource();
+        droneNoise.buffer = noiseBuffer;
+        droneNoise.loop = true;
+        const noiseFilter = actx.createBiquadFilter();
+        noiseFilter.type = "lowpass";
+        noiseFilter.frequency.setValueAtTime(120, actx.currentTime);
+        noiseFilter.Q.setValueAtTime(1, actx.currentTime);
+        const noiseGain = actx.createGain();
+        noiseGain.gain.setValueAtTime(0.3, actx.currentTime);
+        droneNoise.connect(noiseFilter);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(droneGain);
+        droneNoise.start();
+      }
+
+      droneActive = true;
+    } catch (e) { /* ignore */ }
+  }
+
+  function stopDrone() {
+    if (!droneActive) return;
+    try {
+      if (droneGain) {
+        droneGain.gain.linearRampToValueAtTime(0, actx.currentTime + 0.8);
+      }
+      setTimeout(() => {
+        try {
+          if (droneOsc) { droneOsc.stop(); if (droneOsc._lfo) droneOsc._lfo.stop(); droneOsc = null; }
+          if (droneNoise) { droneNoise.stop(); droneNoise = null; }
+          droneGain = null;
+        } catch (e) {}
+      }, 900);
+    } catch (e) {}
+    droneActive = false;
+  }
+
+  function duckDrone() {
+    if (!droneActive || !droneGain) return;
+    try { droneGain.gain.linearRampToValueAtTime(0, actx.currentTime + 0.4); } catch (e) {}
+  }
+
+  function unduckDrone() {
+    if (!droneActive || !droneGain) return;
+    try { droneGain.gain.linearRampToValueAtTime(DRONE_VOL, actx.currentTime + 0.8); } catch (e) {}
+  }
+
+  /* ═══════════════════════════════════════════════════════════
      TACTILE FEEDBACK — cross-platform feel layer
      Audio pulses + visual micro-jitter on all browsers.
      Native vibration where available (feature-detected, silent no-op otherwise).
@@ -575,11 +664,13 @@
     }
     if (name === "sigmap") {
       showTitleFlash();
-      playGlitchBurst(0.8, 0.3); // harsh entry spike
+      playGlitchBurst(0.8, 0.3);
+      startDrone();
     }
     if (name === "finale") {
+      stopDrone();
       stopTrack();
-      playSignalCollapse(); // descending noise on finale entry
+      playSignalCollapse();
       startFinaleSequence();
     }
   }
@@ -1236,7 +1327,12 @@
   soundBtn.addEventListener("click", () => {
     state.soundOn = !state.soundOn;
     soundBtn.setAttribute("data-active", String(state.soundOn));
-    if (!state.soundOn) stopTrack();
+    if (!state.soundOn) {
+      stopTrack();
+      stopDrone();
+    } else if (state.currentState === "sigmap" && !state.activeTrack) {
+      startDrone();
+    }
   });
 
   /* ── Finale Hold-to-Stabilise ───────────────────────────── */
