@@ -521,6 +521,53 @@
   }
 
   /* ═══════════════════════════════════════════════════════════
+     DRONE RESOLVE — transforms dark drone into warm clean fade
+     Called at finale hold completion instead of abrupt stop
+     ═══════════════════════════════════════════════════════════ */
+  function resolveDrone() {
+    if (!droneActive || !actx) {
+      stopDrone();
+      return;
+    }
+    try {
+      // Shift frequency: 42Hz → 65Hz (warm low C)
+      if (droneOsc) {
+        droneOsc.frequency.linearRampToValueAtTime(65, actx.currentTime + 3);
+        // Slow down LFO — from nervous 0.15Hz to calm 0.04Hz
+        if (droneOsc._lfo) {
+          droneOsc._lfo.frequency.linearRampToValueAtTime(0.04, actx.currentTime + 2);
+        }
+      }
+      // Fade out noise layer quickly — leaving only clean sine
+      if (droneNoise) {
+        try {
+          const noiseParent = droneNoise;
+          setTimeout(() => {
+            try { noiseParent.stop(); } catch (e) {}
+          }, 2000);
+        } catch (e) {}
+        droneNoise = null;
+      }
+      // Gentle volume swell then long fade to silence
+      if (droneGain) {
+        droneGain.gain.linearRampToValueAtTime(DRONE_VOL * 1.3, actx.currentTime + 1.5);
+        droneGain.gain.linearRampToValueAtTime(DRONE_VOL * 0.8, actx.currentTime + 4);
+        droneGain.gain.linearRampToValueAtTime(0, actx.currentTime + 8);
+      }
+      // Clean up after fade completes
+      setTimeout(() => {
+        try {
+          if (droneOsc) { droneOsc.stop(); if (droneOsc._lfo) droneOsc._lfo.stop(); droneOsc = null; }
+          droneGain = null;
+        } catch (e) {}
+      }, 8500);
+    } catch (e) {
+      stopDrone();
+    }
+    droneActive = false;
+  }
+
+  /* ═══════════════════════════════════════════════════════════
      TACTILE FEEDBACK — cross-platform feel layer
      Audio pulses + visual micro-jitter on all browsers.
      Native vibration where available (feature-detected, silent no-op otherwise).
@@ -665,10 +712,10 @@
       startDrone();
     }
     if (name === "finale") {
-      stopDrone();
       stopTrack();
       playSignalCollapse();
       startFinaleSequence();
+      // Drone stays alive — it transforms during the finale hold completion
     }
   }
 
@@ -883,19 +930,50 @@
       if (!state.finaleStabilised) {
         state.finaleStabilised = true;
 
-        // Hide hold prompt, reveal "WE REMAIN"
+        // Hide hold prompt
         const holdPrompt = $("#finale-hold-prompt");
         const reveal = $("#finale-reveal");
-
         if (holdPrompt) holdPrompt.classList.remove("is-visible");
+
+        // === VISUAL PURGE — atmosphere dissolves for the first time ===
+        html.dataset.purged = "true";
+        log("finale: visual purge triggered");
+
+        // === DRONE RESOLVE — dark 42Hz transforms to warm clean tone ===
+        resolveDrone();
+
+        // === REVEAL "WE REMAIN" with warmth ===
         setTimeout(() => {
           if (reveal) reveal.classList.add("is-visible");
-        }, 400);
+          playCompletionSound();
+          log("finale: WE REMAIN revealed");
+        }, 600);
 
-        // After a pause, show clean CTA
+        // === SIGNAL ORIGIN INPUT — appears after reveal settles ===
         setTimeout(() => {
-          if (finaleCta) finaleCta.classList.add("is-revealed");
-        }, 2000);
+          const oEl = $("#finale-origin");
+          const hintEl = $("#finale-origin-hint");
+          if (oEl) {
+            oEl.classList.add("is-visible");
+            // Focus the input after transition
+            setTimeout(() => {
+              const input = $("#finale-origin-input");
+              if (input) input.focus();
+            }, 400);
+          }
+          if (hintEl) hintEl.classList.add("is-visible");
+          log("finale: signal origin input ready");
+
+          // Fallback — if user doesn't transmit within 15s, show CTA anyway
+          setTimeout(() => {
+            if (finaleCta && !finaleCta.classList.contains("is-revealed")) {
+              if (oEl) { oEl.classList.add("is-transmitted"); }
+              if (hintEl) { hintEl.classList.add("is-hidden"); }
+              finaleCta.classList.add("is-revealed");
+              log("finale: CTA revealed (timeout fallback)");
+            }
+          }, 15000);
+        }, 3000);
       }
       resetHoldVisuals();
     }
@@ -1349,7 +1427,91 @@
 
   /* ── Revisit ────────────────────────────────────────────── */
   if (revisitBtn) {
-    revisitBtn.addEventListener("click", () => setState("sigmap"));
+    revisitBtn.addEventListener("click", () => {
+      // Reset purge state for re-entry
+      html.dataset.purged = "false";
+      state.finaleStabilised = false;
+      state.finaleReady = false;
+      // Reset finale UI
+      const phases = $$("#finale .finale__phase");
+      phases.forEach((p) => p.classList.remove("is-visible"));
+      if (originEl) { originEl.classList.remove("is-visible", "is-transmitted"); }
+      if (originHint) { originHint.classList.remove("is-visible", "is-hidden"); }
+      if (originEcho) { originEcho.innerHTML = ""; }
+      if (originInput) { originInput.textContent = ""; }
+      if (finaleCta) { finaleCta.classList.remove("is-revealed"); }
+      setState("sigmap");
+    });
+  }
+
+  /* ═══════════════════════════════════════════════════════════
+     SIGNAL ORIGIN — type name → enter → dissolve into particles → CTA
+     ═══════════════════════════════════════════════════════════ */
+  const originInput = $("#finale-origin-input");
+  const originEl = $("#finale-origin");
+  const originHint = $("#finale-origin-hint");
+  const originEcho = $("#finale-origin-echo");
+
+  if (originInput) {
+    // Prevent newlines in contenteditable
+    originInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        transmitOrigin();
+      }
+    });
+
+    // Limit input length
+    originInput.addEventListener("input", () => {
+      const text = originInput.textContent || "";
+      if (text.length > 20) {
+        originInput.textContent = text.slice(0, 20);
+        // Move cursor to end
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(originInput);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    });
+  }
+
+  function transmitOrigin() {
+    if (!originInput || !originEl) return;
+    const name = (originInput.textContent || "").trim();
+    if (!name) return;
+
+    log("finale: transmitting origin —", name);
+
+    // Hide hint
+    if (originHint) originHint.classList.add("is-hidden");
+
+    // Build echo characters with random dissolve directions
+    if (originEcho) {
+      let html = "";
+      for (let i = 0; i < name.length; i++) {
+        const ch = name[i] === " " ? "&nbsp;" : name[i];
+        const dx = (Math.random() - 0.5) * 40;
+        const dy = -(Math.random() * 20 + 10);
+        const delay = i * 0.06 + Math.random() * 0.1;
+        html += '<span class="echo-char" style="--dx:' + dx.toFixed(1) + 'px;--dy:' + dy.toFixed(1) + 'px;--d:' + delay.toFixed(2) + 's">' + ch + "</span>";
+      }
+      originEcho.innerHTML = html;
+    }
+
+    // Tactile feedback
+    tactile.lock();
+    playGlitchBurst(0.2, 0.1);
+
+    // Fade out the input line
+    originEl.classList.add("is-transmitted");
+
+    // After particles dissolve, show CTA
+    setTimeout(() => {
+      if (finaleCta) finaleCta.classList.add("is-revealed");
+      log("finale: CTA revealed");
+    }, 2800);
   }
 
   /* ── Init ───────────────────────────────────────────────── */

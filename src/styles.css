@@ -41,8 +41,9 @@ body {
 }
 a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; background: none; border: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-/* Allow text selection ONLY in finale CTA (after stabilisation) */
+/* Allow text selection in finale CTA and origin input */
 .finale__cta-block { -webkit-user-select: text; user-select: text; }
+.finale__origin-input { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
 
 /* ═══════════════════════════════════════════════════════════
    CORRUPTION SYSTEM — the visual language of instability
@@ -762,6 +763,175 @@ button { font: inherit; color: inherit; background: none; border: none; cursor: 
 }
 .finale__link:hover .finale__link-dot {
   background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   FINALE — PURGE & WARMTH SHIFT
+   When hold completes, atmosphere dissolves and palette warms
+   ═══════════════════════════════════════════════════════════ */
+[data-purged="true"] .atmos__grain {
+  opacity: 0 !important;
+  transition: opacity 3s ease !important;
+}
+[data-purged="true"] .atmos__scanline {
+  opacity: 0 !important;
+  transition: opacity 2.5s ease !important;
+}
+[data-purged="true"] .atmos__interference {
+  opacity: 0 !important;
+  transition: opacity 1.5s ease !important;
+}
+[data-purged="true"] .atmos__glow {
+  opacity: 0 !important;
+  transition: opacity 4s ease !important;
+}
+[data-purged="true"] .atmos__vignette {
+  opacity: 0.3;
+  transition: opacity 4s ease;
+}
+
+/* Warmth shift — cold palette warms after purge */
+[data-purged="true"] {
+  --cold: #c4a882;
+  --text: #f8f2ea;
+  --text-dim: rgba(248, 242, 234, 0.7);
+  --text-faint: rgba(248, 242, 234, 0.4);
+  transition: --cold 4s ease, --text 3s ease;
+}
+/* Fallback for browsers without @property — use filter */
+[data-purged="true"] .finale__reveal-title {
+  color: #f8f2ea;
+  text-shadow: 0 0 60px rgba(255, 198, 125, 0.15);
+  transition: color 3s ease, text-shadow 3s ease;
+}
+[data-purged="true"] .finale {
+  background: #030404;
+  transition: background 5s ease;
+}
+
+/* Signal origin — terminal input */
+.finale__origin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  font-family: var(--mono);
+  font-size: clamp(0.72rem, 2.2vw, 0.88rem);
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  opacity: 0;
+  transform: translateY(0.5rem);
+  transition: opacity 1.2s ease, transform 1.2s ease;
+  pointer-events: none;
+  margin-top: clamp(1.5rem, 4vw, 2.5rem);
+}
+.finale__origin.is-visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.finale__origin-prompt {
+  color: var(--text-faint);
+  white-space: pre;
+}
+.finale__origin-input {
+  outline: none;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+  caret-color: transparent;
+  min-width: 1ch;
+  max-width: 16ch;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.finale__origin-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--text-faint);
+  opacity: 0.3;
+}
+.finale__origin-cursor {
+  color: var(--text);
+  animation: origin-blink 1s step-end infinite;
+}
+.finale__origin.is-transmitted .finale__origin-cursor {
+  display: none;
+}
+
+@keyframes origin-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Hint text below input */
+.finale__origin-hint {
+  font-family: var(--mono);
+  font-size: 0.46rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  opacity: 0;
+  margin-top: 0.6rem;
+  transition: opacity 0.8s ease;
+}
+.finale__origin-hint.is-visible {
+  opacity: 0.4;
+}
+.finale__origin-hint.is-hidden {
+  opacity: 0 !important;
+  transition: opacity 0.4s ease !important;
+}
+
+/* Echo container — particles after transmit */
+.finale__origin-echo {
+  position: relative;
+  height: 2rem;
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  pointer-events: none;
+}
+.finale__origin-echo .echo-char {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: clamp(0.72rem, 2.2vw, 0.88rem);
+  letter-spacing: 0.12em;
+  color: var(--text);
+  opacity: 1;
+  animation: echo-dissolve 2.5s ease-out forwards;
+  animation-delay: var(--d);
+}
+
+@keyframes echo-dissolve {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+    filter: blur(0);
+  }
+  30% {
+    opacity: 0.8;
+    transform: translate(var(--dx), var(--dy)) scale(1.1);
+    filter: blur(0.5px);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(var(--dx) * 4), calc(var(--dy) * 6)) scale(0.2);
+    filter: blur(3px);
+  }
+}
+
+/* Transmitted state — origin line fades out */
+.finale__origin.is-transmitted {
+  opacity: 0;
+  transform: translateY(-0.3rem);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+  pointer-events: none;
 }
 
 /* ═══════════════════════════════════════════════════════════
