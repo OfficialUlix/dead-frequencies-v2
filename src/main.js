@@ -185,36 +185,38 @@ function corrupt(text, amount) {
 }
 
 function terminalGlitch(text, progress) {
-  const glyphs = ["#", "%", "/", "_", ".", ":", "0", "1"];
+  const glyphs = ["#", "%", "/", "_", ".", ":", "0", "1", "+", "="];
   const clarity = Math.max(0, Math.min(1, progress));
-  const scramble = Math.max(2, Math.round(9 - clarity * 7));
+  const scramble = Math.max(2, Math.round(10 - clarity * 8));
   const jitter = Math.floor(performance.now() / 48);
 
   return text
     .split("")
     .map((char, index) => {
       if (char === " " || char === "." || char === "," || char === ":") return char;
-      const shouldReveal = index / Math.max(1, text.length) < clarity * 0.9;
-      if (shouldReveal && (index + jitter) % 11 !== 0) return char;
+      const shouldReveal = index / Math.max(1, text.length) < clarity * 0.95;
+      if (clarity < 0.18) return glyphs[(index * 3 + jitter) % glyphs.length];
+      if (shouldReveal && (index + jitter) % 9 !== 0) return char;
       if ((index + jitter) % scramble === 0) return glyphs[(index + jitter) % glyphs.length];
-      return shouldReveal ? char : index % 3 === 0 ? "_" : char;
+      return shouldReveal ? char : glyphs[(index + jitter * 2) % glyphs.length];
     })
     .join("");
 }
 
-function resolveTerminalText(node, text, duration = 900, onDone) {
+function resolveTerminalText(node, text, duration = 900, onDone, options = {}) {
   if (!node) {
     if (onDone) onDone();
     return;
   }
 
-  if (reducedMotion.matches) {
+  if (reducedMotion.matches && !options.force) {
     setText(node, text);
     if (onDone) onDone();
     return;
   }
 
   const start = performance.now();
+  node.classList.add("is-glitching");
 
   function frame(now) {
     const progress = Math.min(1, (now - start) / duration);
@@ -224,6 +226,7 @@ function resolveTerminalText(node, text, duration = 900, onDone) {
       return;
     }
     setText(node, text);
+    node.classList.remove("is-glitching");
     if (onDone) onDone();
   }
 
@@ -237,10 +240,10 @@ function revealFinaleLine(node, text, delay, duration, onDone) {
       return;
     }
     node.classList.add("is-visible", "is-glitching");
+    setText(node, terminalGlitch(text, 0));
     resolveTerminalText(node, text, duration, () => {
-      node.classList.remove("is-glitching");
       if (onDone) onDone();
-    });
+    }, { force: true });
   }, delay);
 }
 
@@ -806,9 +809,9 @@ function decodeFinale() {
   refs.finaleLineA?.classList.remove("is-visible");
   refs.finaleLineB?.classList.remove("is-visible");
   refs.finaleReveal?.classList.add("is-visible");
-  setText(refs.finaleTitle, "");
+  setText(refs.finaleTitle, terminalGlitch("WE REMAIN", 0));
   setMachineState("finale");
-  resolveTerminalText(refs.finaleTitle, "WE REMAIN", reducedMotion.matches ? 0 : 1250);
+  resolveTerminalText(refs.finaleTitle, "WE REMAIN", 1450, null, { force: true });
   window.setTimeout(() => {
     if (app.finaleDecoded) refs.finaleActions?.classList.add("is-visible");
   }, reducedMotion.matches ? 80 : 1200);
@@ -966,6 +969,18 @@ function bindHold(target, context) {
   });
   target.addEventListener("pointercancel", cancelHold);
   target.addEventListener("lostpointercapture", cancelHold);
+  target.addEventListener("touchstart", (event) => {
+    event.preventDefault();
+    startHold(context);
+  }, { passive: false });
+  target.addEventListener("touchend", (event) => {
+    event.preventDefault();
+    cancelHold();
+  }, { passive: false });
+  target.addEventListener("touchcancel", (event) => {
+    event.preventDefault();
+    cancelHold();
+  }, { passive: false });
   target.addEventListener("contextmenu", (event) => event.preventDefault());
   target.addEventListener("keydown", (event) => {
     if (event.repeat) return;
@@ -980,6 +995,26 @@ function bindHold(target, context) {
       cancelHold();
     }
   });
+}
+
+function suppressTouchHighlight() {
+  const interactive = "button, a, .node, .core-node, .recover-hold, .finale-hold-button, .panel__close, .finale-action";
+  const holdControl = ".core-node, .recover-hold, .finale-hold-button";
+
+  document.addEventListener("touchstart", (event) => {
+    const target = event.target.closest(interactive);
+    if (!target) return;
+    target.blur?.();
+    if (target.matches(holdControl)) {
+      event.preventDefault();
+    }
+  }, { passive: false, capture: true });
+
+  document.addEventListener("touchend", (event) => {
+    const target = event.target.closest(interactive);
+    if (!target) return;
+    target.blur?.();
+  }, { passive: true, capture: true });
 }
 
 function replaySignal() {
@@ -1178,6 +1213,7 @@ setGateRing(0);
 setPanelFill(0);
 setFinaleFill(0);
 body.dataset.holding = "false";
+suppressTouchHighlight();
 setMachineState("gate");
 resizeCanvas();
 raf = requestAnimationFrame(render);

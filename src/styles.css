@@ -18,7 +18,8 @@
 
 * {
   box-sizing: border-box;
-  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-focus-ring-color: transparent;
 }
 
 html,
@@ -39,7 +40,8 @@ button,
 a {
   font: inherit;
   color: inherit;
-  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  -webkit-tap-highlight-color: transparent !important;
+  -webkit-focus-ring-color: transparent;
 }
 
 button {
@@ -366,7 +368,7 @@ a {
   *,
   *::before,
   *::after {
-    -webkit-tap-highlight-color: rgba(0, 0, 0, 0) !important;
+    -webkit-tap-highlight-color: transparent !important;
     -webkit-touch-callout: none !important;
   }
 
@@ -379,6 +381,29 @@ a {
 
   ::selection {
     background: transparent;
+  }
+}
+
+@supports (-webkit-touch-callout: none) {
+  html,
+  body,
+  body * {
+    -webkit-tap-highlight-color: transparent !important;
+    -webkit-focus-ring-color: transparent !important;
+    -webkit-touch-callout: none !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
+  }
+
+  body *:focus,
+  body *:focus-visible,
+  body *:active {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+
+  ::selection {
+    background: transparent !important;
   }
 }
 
@@ -823,6 +848,13 @@ a {
   letter-spacing: 0;
   text-transform: uppercase;
   text-shadow: 0 0 54px rgba(211, 154, 72, 0.12);
+}
+
+.finale__reveal h1.is-glitching {
+  text-shadow:
+    2px 0 rgba(210, 75, 50, 0.34),
+    -2px 0 rgba(211, 154, 72, 0.2),
+    0 0 54px rgba(211, 154, 72, 0.1);
 }
 
 .finale__reveal p {
