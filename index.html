@@ -3,213 +3,177 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Dead Frequencies</title>
-    <meta name="description" content="Dead Frequencies — a world and a mind breaking down like a failing signal. Six transmissions from static to silence." />
-    <meta name="theme-color" content="#020304" />
+    <title>ULIX - Dead Frequencies</title>
+    <meta
+      name="description"
+      content="ULIX - Dead Frequencies. Recover six damaged transmissions inside the DF-06 signal node."
+    />
+    <meta name="theme-color" content="#080806" />
+    <meta property="og:title" content="ULIX - Dead Frequencies" />
+    <meta property="og:description" content="Recover the signal. Six transmissions. One message left alive." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23080806'/%3E%3Cpath d='M5 18h4l2-6 4 14 3-20 3 12h6' fill='none' stroke='%23d24b32' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,300;0,400;0,500;1,300&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-
-    <!-- ═══ ATMOSPHERE ═══ -->
     <div class="atmos" aria-hidden="true">
       <div class="atmos__grain"></div>
-      <div class="atmos__scanline"></div>
-      <div class="atmos__interference"></div>
-      <div class="atmos__vignette"></div>
-      <div class="atmos__glow"></div>
+      <div class="atmos__scan"></div>
+      <div class="atmos__burn atmos__burn--red"></div>
+      <div class="atmos__burn atmos__burn--amber"></div>
     </div>
 
-    <!-- ═══ SOUND TOGGLE ═══ -->
-    <button class="sound-btn" aria-label="Toggle sound" data-active="false">
-      <svg class="sound-btn__off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-      <svg class="sound-btn__on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
-    </button>
-
-    <!-- ═══ HOLD INDICATOR — appears contextually ═══ -->
-    <div class="hold-indicator" id="hold-indicator" aria-hidden="true">
-      <svg class="hold-indicator__ring" viewBox="0 0 60 60">
-        <circle cx="30" cy="30" r="27" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1.5"/>
-        <circle class="hold-indicator__fill" cx="30" cy="30" r="27" fill="none" stroke="var(--cold)" stroke-width="1.5" stroke-dasharray="169.65" stroke-dashoffset="169.65" stroke-linecap="round" transform="rotate(-90 30 30)"/>
-      </svg>
-      <span class="hold-indicator__label">Hold to stabilise</span>
-    </div>
-
-    <!-- ═══════════════════════════════════════════
-         GATE — Entry ritual
-         ═══════════════════════════════════════════ -->
-    <section class="gate" id="gate">
-      <div class="gate__static" aria-hidden="true"></div>
-      <div class="gate__content">
-        <div class="gate__boot" aria-live="polite">
-          <p class="gate__line" data-delay="200"><span class="g-prompt">&gt;</span> SIGPROTO v0.7.3 — initialising decoder</p>
-          <p class="gate__line" data-delay="700" data-glitch><span class="g-prompt">&gt;</span> Scanning bands: <span class="g-val g-val--cold">47.3 kHz — 891.2 kHz</span></p>
-          <p class="gate__line" data-delay="1200"><span class="g-prompt">&gt;</span> Band response: <span class="g-val g-val--cold">6 signals locked</span></p>
-          <p class="gate__line" data-delay="1700" data-glitch><span class="g-prompt">&gt;</span> Packet loss: <span class="g-val g-val--warn">38% — frames corrupted</span></p>
-          <p class="gate__line" data-delay="2200"><span class="g-prompt">&gt;</span> Source authentication: <span class="g-val g-val--warm">UNVERIFIED ORIGIN</span></p>
-          <p class="gate__line" data-delay="2700" data-glitch><span class="g-prompt">&gt;</span> Signal integrity: <span class="g-val g-val--crit">DEGRADING — 0.4s DROPOUT</span></p>
-          <p class="gate__line" data-delay="3300"><span class="g-prompt">&gt;</span> Human signature check: <span class="g-val g-val--warn">NON-STANDARD PATTERN</span></p>
-          <p class="gate__line gate__line--ready" data-delay="4000"><span class="g-prompt">&gt;</span> awaiting manual input to proceed_</p>
+    <main class="machine" id="machine" aria-label="Dead Frequencies recovery node">
+      <header class="machine__top" aria-label="Console identity">
+        <div class="machine-id">
+          <span>ULIX</span>
+          <span>DEAD FREQUENCIES</span>
+          <span>EP SIGNAL</span>
         </div>
+        <div class="machine-state" aria-live="polite">
+          <span id="state-readout">SIGNAL LOST</span>
+          <span><span id="count-readout">0</span>/6 RECOVERED</span>
+          <span id="integrity-readout">0% INTEGRITY</span>
+        </div>
+        <a class="listen-link" href="https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543" target="_blank" rel="noreferrer">Listen</a>
+      </header>
 
-        <div class="gate__controls">
-          <button class="gate__sound-toggle" id="gate-sound-toggle" data-on="false" data-tapped="false">
-            <svg class="gate__sound-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
-            <span class="gate__sound-label">Tap for sound</span>
+      <section class="console" aria-label="Recovery console">
+        <canvas id="signal-canvas" width="1200" height="900" aria-hidden="true"></canvas>
+        <div class="console__glass" aria-hidden="true"></div>
+
+        <aside class="status-rail status-rail--left" aria-label="Node status">
+          <span>RECOVERY NODE DF-06</span>
+          <strong id="lock-readout">LOCK: NONE</strong>
+          <span id="carrier-readout">CARRIER: DEAD</span>
+        </aside>
+
+        <aside class="status-rail status-rail--right" aria-label="Frequency status">
+          <span>CURRENT FREQUENCY</span>
+          <strong id="frequency-readout">--.- MHz</strong>
+          <span id="fragment-readout">FINAL MESSAGE LOCKED</span>
+        </aside>
+
+        <div class="core" aria-live="polite">
+          <div class="core__rings" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <button class="core-node" id="gate-hold" type="button" aria-describedby="gate-instruction">
+            <svg class="core-node__ring" viewBox="0 0 220 220" aria-hidden="true">
+              <circle class="core-node__track" cx="110" cy="110" r="100"></circle>
+              <circle class="core-node__fill" id="gate-progress" cx="110" cy="110" r="100"></circle>
+            </svg>
+            <span class="core-node__content">
+              <span id="core-label">SIGNAL LOST</span>
+              <strong id="core-action">HOLD TO BEGIN</strong>
+              <span id="core-sub">0 OF 6 TRANSMISSIONS</span>
+            </span>
           </button>
+        </div>
 
-          <!-- HOLD to begin — not click -->
-          <div class="gate__hold-zone" id="gate-hold">
-            <span class="gate__enter-border" aria-hidden="true"></span>
-            <span class="gate__enter-label">Hold to Begin Transmission</span>
-            <span class="gate__enter-sub">6 signals detected</span>
-            <div class="gate__hold-progress" aria-hidden="true"></div>
+        <div class="orbit" aria-label="Transmission nodes">
+          <button class="node" type="button" data-track="0" style="--x: 22%; --y: 22%;" aria-label="01 Static Signals, locked">
+            <span class="node__dot"></span>
+            <span class="node__num">01</span>
+            <span class="node__meta">086.7</span>
+          </button>
+          <button class="node" type="button" data-track="1" style="--x: 78%; --y: 22%;" aria-label="02 Drown Tonight, locked">
+            <span class="node__dot"></span>
+            <span class="node__num">02</span>
+            <span class="node__meta">094.2</span>
+          </button>
+          <button class="node" type="button" data-track="2" style="--x: 14%; --y: 52%;" aria-label="03 Ghost, locked">
+            <span class="node__dot"></span>
+            <span class="node__num">03</span>
+            <span class="node__meta">101.9</span>
+          </button>
+          <button class="node" type="button" data-track="3" style="--x: 86%; --y: 52%;" aria-label="04 Neon Graves, locked">
+            <span class="node__dot"></span>
+            <span class="node__num">04</span>
+            <span class="node__meta">113.4</span>
+          </button>
+          <button class="node" type="button" data-track="4" style="--x: 29%; --y: 82%;" aria-label="05 Light The Fire, locked">
+            <span class="node__dot"></span>
+            <span class="node__num">05</span>
+            <span class="node__meta">127.8</span>
+          </button>
+          <button class="node" type="button" data-track="5" style="--x: 71%; --y: 82%;" aria-label="06 We Remain, locked">
+            <span class="node__dot"></span>
+            <span class="node__num">06</span>
+            <span class="node__meta">144.0</span>
+          </button>
+        </div>
+
+        <p class="gate-instruction" id="gate-instruction">HOLD TO RECOVER SIGNAL</p>
+      </section>
+
+      <section class="panel" id="panel" aria-hidden="true" aria-label="Transmission fragment panel">
+        <div class="panel__shell">
+          <button class="panel__close" id="panel-close" type="button" aria-label="Return to transmission map">RETURN</button>
+          <div class="panel__top">
+            <span id="panel-number">01</span>
+            <span id="panel-status">CORRUPTED</span>
+          </div>
+          <h1 id="panel-title">STATIC SIGNALS</h1>
+          <p class="panel__fragment corrupted" id="panel-fragment">A track about first contact with the collapse. When the noise outside starts matching the noise inside. It is the moment a broken signal becomes recognisably human.</p>
+          <div class="panel__data">
+            <span id="panel-frequency">086.7 MHz</span>
+            <span id="panel-integrity">+18% INTEGRITY</span>
+          </div>
+          <div class="panel__actions">
+            <button class="recover-hold" id="panel-hold" type="button">
+              <span class="recover-hold__fill" id="panel-progress"></span>
+              <span id="panel-hold-label">HOLD TO RECOVER FRAGMENT</span>
+            </button>
           </div>
         </div>
+      </section>
 
-        <p class="gate__ver">DEAD FREQUENCIES // v1.0</p>
-      </div>
-    </section>
-
-    <!-- ═══════════════════════════════════════════
-         SIGNAL MAP — The 6 tracks as explorable nodes
-         ═══════════════════════════════════════════ -->
-    <section class="sigmap" id="sigmap" aria-label="Signal map — explore 6 transmissions">
-      <span class="sigmap__sys-label" aria-hidden="true">DEAD FREQUENCIES</span>
-
-      <div class="sigmap__field">
-        <div class="sigmap__grid" aria-hidden="true"></div>
-
-        <div class="sigmap__core" aria-hidden="true">
-          <span class="sigmap__core-ring"></span>
-          <span class="sigmap__core-ring sigmap__core-ring--2"></span>
-          <span class="sigmap__core-dot"></span>
-        </div>
-
-        <div class="sigmap__hud">
-          <span class="sigmap__hud-label">SIGNALS DECODED</span>
-          <span class="sigmap__hud-count"><span id="decoded-count">0</span> / 6</span>
-        </div>
-
-        <div class="sigmap__integrity">
-          <span class="sigmap__integrity-label">SIGNAL INTEGRITY</span>
-          <div class="sigmap__integrity-bar">
-            <div class="sigmap__integrity-fill" id="integrity-fill"></div>
-          </div>
-          <span class="sigmap__integrity-pct" id="integrity-pct">100%</span>
-        </div>
-
-        <!-- 6 Nodes -->
-        <button class="node" data-track="1" data-color="cold" aria-label="Signal 01 — tap to explore" style="--node-x: 25%; --node-y: 18%;">
-          <span class="node__ping" aria-hidden="true"></span>
-          <span class="node__dot"></span>
-          <span class="node__label">01</span>
-        </button>
-
-        <button class="node" data-track="2" data-color="warm" aria-label="Signal 02 — tap to explore" style="--node-x: 72%; --node-y: 24%;">
-          <span class="node__ping" aria-hidden="true"></span>
-          <span class="node__dot"></span>
-          <span class="node__label">02</span>
-        </button>
-
-        <button class="node" data-track="3" data-color="ghost" aria-label="Signal 03 — tap to explore" style="--node-x: 15%; --node-y: 50%;">
-          <span class="node__ping" aria-hidden="true"></span>
-          <span class="node__dot"></span>
-          <span class="node__label">03</span>
-        </button>
-
-        <button class="node" data-track="4" data-color="critical" aria-label="Signal 04 — tap to explore" style="--node-x: 80%; --node-y: 55%;">
-          <span class="node__ping" aria-hidden="true"></span>
-          <span class="node__dot"></span>
-          <span class="node__label">04</span>
-        </button>
-
-        <button class="node" data-track="5" data-color="ember" aria-label="Signal 05 — tap to explore" style="--node-x: 30%; --node-y: 78%;">
-          <span class="node__ping" aria-hidden="true"></span>
-          <span class="node__dot"></span>
-          <span class="node__label">05</span>
-        </button>
-
-        <button class="node" data-track="6" data-color="resolve" aria-label="Signal 06 — tap to explore" style="--node-x: 68%; --node-y: 82%;">
-          <span class="node__ping" aria-hidden="true"></span>
-          <span class="node__dot"></span>
-          <span class="node__label">06</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- ═══════════════════════════════════════════
-         TRACK PANEL — overlay with hold-to-decode
-         ═══════════════════════════════════════════ -->
-    <div class="panel" id="panel" aria-hidden="true" data-holding="false">
-      <div class="panel__backdrop"></div>
-      <div class="panel__shell">
-        <button class="panel__close" aria-label="Close">&times;</button>
-        <div class="panel__header">
-          <span class="panel__number" id="panel-number">01</span>
-          <span class="panel__phase" id="panel-phase">Phase: Interference</span>
-          <div class="panel__signal-row">
-            <span class="panel__signal-bars" id="panel-bars"></span>
-            <span class="panel__signal-pct" id="panel-pct">78%</span>
+      <section class="finale" id="finale" aria-label="Final recovered message">
+        <div class="finale__sequence" id="finale-sequence">
+          <p class="finale__line" id="finale-line-a">ALL SIGNALS DECODED</p>
+          <p class="finale__line" id="finale-line-b">RESIDUAL FREQUENCY DETECTED</p>
+          <p class="finale__line" id="finale-line-c">FINAL MESSAGE PARTIAL</p>
+          <div class="finale__line finale__hold" id="finale-hold-wrap">
+            <button class="finale-hold-button" id="finale-hold" type="button">
+              <span class="finale-hold-button__fill" id="finale-progress"></span>
+              <span>HOLD TO STABILISE FINAL MESSAGE</span>
+            </button>
           </div>
         </div>
-        <h2 class="panel__title" id="panel-title">Static Signals</h2>
-        <div class="panel__status" id="panel-status">SIGNAL DETECTED</div>
-        <p class="panel__body" id="panel-body"></p>
-        <div class="panel__divider" aria-hidden="true"></div>
-        <!-- Fragment: corrupted until unlocked via hold -->
-        <div class="panel__decode-zone" id="panel-decode">
-          <p class="panel__fragment corrupted" id="panel-fragment"></p>
-          <div class="panel__unlock" id="panel-unlock">
-            <div class="panel__unlock-fill" id="panel-unlock-fill"></div>
-            <span class="panel__unlock-label" id="panel-unlock-label">Hold to Unlock Signal</span>
+        <div class="finale__reveal" id="finale-reveal">
+          <div class="finale__ledger" aria-hidden="true">
+            <span>01 STATIC SIGNALS / RECOVERED</span>
+            <span>02 DROWN TONIGHT / RECOVERED</span>
+            <span>03 GHOST / RECOVERED</span>
+            <span>04 NEON GRAVES / RECOVERED</span>
+            <span>05 LIGHT THE FIRE / RECOVERED</span>
+            <span>06 WE REMAIN / RECOVERED</span>
           </div>
-          <!-- Fallback: shown only if SC widget fails -->
-          <div class="panel__fallback" id="panel-fallback" hidden>
-            <span class="panel__fallback-text">Preview unavailable</span>
-            <a class="panel__fallback-link" id="panel-fallback-link" href="#" target="_blank" rel="noreferrer">Open on SoundCloud</a>
+          <div class="finale__signal" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <span class="finale__integrity">100% INTEGRITY</span>
+          <h1>WE REMAIN</h1>
+          <p>The signal is damaged. The message is not.</p>
+          <div class="finale__actions" id="finale-actions">
+            <a class="finale-action finale-action--primary" href="https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543" target="_blank" rel="noreferrer">LISTEN TO THE EP</a>
+            <button class="finale-action" id="replay-button" type="button">REPLAY SIGNAL</button>
+            <button class="finale-action" id="view-button" type="button">VIEW TRANSMISSIONS</button>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
 
-    <!-- ═══════════════════════════════════════════
-         FINALE — phased reveal: signal lost → hold → WE REMAIN
-         ═══════════════════════════════════════════ -->
-    <section class="finale" id="finale" data-holding="false">
-      <div class="finale__content">
-        <!-- Phased center text — one at a time -->
-        <div class="finale__center">
-          <p class="finale__phase" id="finale-lost">signal lost</p>
-          <p class="finale__phase" id="finale-detected">residual frequency detected</p>
-          <div class="finale__phase" id="finale-hold-prompt">
-            <p class="finale__hold-label">Hold to stabilise</p>
-          </div>
-          <p class="finale__phase finale__reveal-title" id="finale-reveal">WE REMAIN</p>
-        </div>
-
-        <!-- Signal origin — terminal input after reveal -->
-        <div class="finale__origin" id="finale-origin">
-          <span class="finale__origin-prompt">&gt; signal origin: </span>
-          <span class="finale__origin-input" id="finale-origin-input" contenteditable="true" spellcheck="false" data-placeholder="___"></span>
-          <span class="finale__origin-cursor">_</span>
-        </div>
-        <p class="finale__origin-hint" id="finale-origin-hint">press enter to transmit</p>
-        <div class="finale__origin-echo" id="finale-origin-echo" aria-hidden="true"></div>
-
-        <!-- CTA — revealed after hold -->
-        <div class="finale__cta-block">
-          <a class="finale__listen" href="https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing" target="_blank" rel="noreferrer">Listen</a>
-          <nav class="finale__links">
-            <a class="finale__link" href="https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543&utm_source=clipboard&utm_medium=text&utm_campaign=social_sharing" target="_blank" rel="noreferrer"><span class="finale__link-dot"></span> SoundCloud</a>
-            <button class="finale__link" id="revisit-btn"><span class="finale__link-dot"></span> Revisit Signals</button>
-          </nav>
-        </div>
-      </div>
-    </section>
-
-    <script src="./src/main.js"></script>
+    <script type="module" src="./src/main.js"></script>
   </body>
 </html>

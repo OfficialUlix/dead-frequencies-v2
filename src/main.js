@@ -1,1521 +1,1140 @@
-/* ═══════════════════════════════════════════════════════════════
-   DEAD FREQUENCIES — Transmission Experience Engine
-   State Machine: gate → sigmap → (panel) → finale
-   Interaction: TAP node → open panel → HOLD to unlock signal
-   Audio: Native <audio> element with per-track MP3 previews
-   ═══════════════════════════════════════════════════════════════ */
+const $ = (selector, context = document) => context.querySelector(selector);
+const $$ = (selector, context = document) => Array.from(context.querySelectorAll(selector));
 
-(function () {
-  "use strict";
+const TRACKS = [
+  {
+    number: "01",
+    title: "STATIC SIGNALS",
+    fragment: "A track about first contact with the collapse. When the noise outside starts matching the noise inside. It is the moment a broken signal becomes recognisably human.",
+    frequency: "086.7 MHz",
+    src: "audio/static-signals.mp3",
+    start: 36,
+    end: 69,
+  },
+  {
+    number: "02",
+    title: "DROWN TONIGHT",
+    fragment: "A track about pressure, numbness, and losing control while trying to keep breathing through it. It feels like sinking, but not surrendering.",
+    frequency: "094.2 MHz",
+    src: "audio/drown-tonight.mp3",
+    start: 82,
+    end: 110,
+  },
+  {
+    number: "03",
+    title: "GHOST",
+    fragment: "A track about absence that still has weight. People, memories, and versions of yourself that refuse to fully leave. It is grief answering back through static.",
+    frequency: "101.9 MHz",
+    src: "audio/ghost.mp3",
+    start: 11,
+    end: 31,
+  },
+  {
+    number: "04",
+    title: "NEON GRAVES",
+    fragment: "A track about dead cities, artificial light, and the strange beauty of places that kept glowing after they stopped feeling alive. It turns nightlife into a cemetery of memories.",
+    frequency: "113.4 MHz",
+    src: "audio/neon-graves.mp3",
+    start: 90,
+    end: 123,
+  },
+  {
+    number: "05",
+    title: "LIGHT THE FIRE",
+    fragment: "A track about the first return of willpower after collapse. Anger becoming warmth, survival becoming motion. It is the ignition point where the signal stops begging and starts burning.",
+    frequency: "127.8 MHz",
+    src: "audio/light-the-fire.mp3",
+    start: 36,
+    end: 59,
+  },
+  {
+    number: "06",
+    title: "WE REMAIN",
+    fragment: "A track about what survives after everything else fails: connection, loyalty, and the refusal to disappear. It is the final proof that the signal was never just noise.",
+    frequency: "144.0 MHz",
+    src: "audio/we-remain.mp3",
+    start: 101,
+    end: 117,
+  },
+];
 
-  const DEBUG = true;
-  function log() {
-    if (DEBUG) console.log("[DF]", ...arguments);
+const INTEGRITY = [0, 18, 32, 49, 66, 84, 100];
+const HOLD = {
+  gate: 1650,
+  panel: 900,
+  finale: 1500,
+};
+const RING_LENGTH = 628.319;
+const SOUNDCLOUD_URL = "https://soundcloud.com/officialulix/sets/dead-frequencies-ep/s-2C5xUiZAUcY?si=5020ca7b6da746ec98c100a862eee543";
+
+const html = document.documentElement;
+const body = document.body;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const canvas = $("#signal-canvas");
+const ctx = canvas?.getContext("2d");
+
+const refs = {
+  state: $("#state-readout"),
+  count: $("#count-readout"),
+  integrity: $("#integrity-readout"),
+  lock: $("#lock-readout"),
+  carrier: $("#carrier-readout"),
+  frequency: $("#frequency-readout"),
+  fragment: $("#fragment-readout"),
+  coreLabel: $("#core-label"),
+  coreAction: $("#core-action"),
+  coreSub: $("#core-sub"),
+  gateHold: $("#gate-hold"),
+  gateProgress: $("#gate-progress"),
+  nodes: $$(".node"),
+  panel: $("#panel"),
+  panelClose: $("#panel-close"),
+  panelNumber: $("#panel-number"),
+  panelStatus: $("#panel-status"),
+  panelTitle: $("#panel-title"),
+  panelFragment: $("#panel-fragment"),
+  panelFrequency: $("#panel-frequency"),
+  panelIntegrity: $("#panel-integrity"),
+  panelHold: $("#panel-hold"),
+  panelProgress: $("#panel-progress"),
+  panelHoldLabel: $("#panel-hold-label"),
+  listen: $(".listen-link"),
+  finaleLineA: $("#finale-line-a"),
+  finaleLineB: $("#finale-line-b"),
+  finaleLineC: $("#finale-line-c"),
+  finaleHoldWrap: $("#finale-hold-wrap"),
+  finaleHold: $("#finale-hold"),
+  finaleProgress: $("#finale-progress"),
+  finaleReveal: $("#finale-reveal"),
+  finaleActions: $("#finale-actions"),
+  replay: $("#replay-button"),
+  view: $("#view-button"),
+};
+
+const app = {
+  state: "gate",
+  activeTrack: null,
+  recovered: new Set(),
+  holding: false,
+  holdContext: null,
+  holdStart: 0,
+  holdRaf: 0,
+  holdProgress: 0,
+  targetEnergy: 0.12,
+  energy: 0.12,
+  audioTrack: null,
+  pendingFinale: false,
+  finalePrimed: false,
+  finaleDecoded: false,
+};
+
+let audio = null;
+let audioContext = null;
+let mediaSource = null;
+let clipFilter = null;
+let clipGain = null;
+let audioFadeFrame = 0;
+let audioStopTimer = 0;
+let audioUnlocked = false;
+let noiseBuffer = null;
+let tactileIndex = -1;
+let droneOsc = null;
+let droneNoise = null;
+let droneGain = null;
+let droneFilter = null;
+let raf = 0;
+let lastFrame = 0;
+
+function countRecovered() {
+  return app.recovered.size;
+}
+
+function integrityForCount(count) {
+  return INTEGRITY[Math.max(0, Math.min(INTEGRITY.length - 1, count))];
+}
+
+function setText(node, value) {
+  if (node) node.textContent = value;
+}
+
+function setGateRing(value) {
+  if (!refs.gateProgress) return;
+  refs.gateProgress.style.strokeDashoffset = String(RING_LENGTH * (1 - Math.max(0, Math.min(1, value))));
+}
+
+function setPanelFill(value) {
+  if (!refs.panelProgress) return;
+  refs.panelProgress.style.width = `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+}
+
+function setFinaleFill(value) {
+  if (!refs.finaleProgress) return;
+  refs.finaleProgress.style.width = `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+}
+
+function corrupt(text, amount) {
+  if (amount <= 0) return text;
+  const marks = ["_", "/", ".", ":"];
+  return text
+    .split("")
+    .map((char, index) => {
+      if (char === " " || char === "." || char === ",") return char;
+      return index % amount === 0 ? marks[index % marks.length] : char;
+    })
+    .join("");
+}
+
+function terminalGlitch(text, progress) {
+  const glyphs = ["#", "%", "/", "_", ".", ":", "0", "1"];
+  const clarity = Math.max(0, Math.min(1, progress));
+  const scramble = Math.max(2, Math.round(9 - clarity * 7));
+  const jitter = Math.floor(performance.now() / 48);
+
+  return text
+    .split("")
+    .map((char, index) => {
+      if (char === " " || char === "." || char === "," || char === ":") return char;
+      const shouldReveal = index / Math.max(1, text.length) < clarity * 0.9;
+      if (shouldReveal && (index + jitter) % 11 !== 0) return char;
+      if ((index + jitter) % scramble === 0) return glyphs[(index + jitter) % glyphs.length];
+      return shouldReveal ? char : index % 3 === 0 ? "_" : char;
+    })
+    .join("");
+}
+
+function ensureAudio() {
+  if (audio) return audio;
+
+  audio = new Audio();
+  audio.preload = "auto";
+  audio.volume = 1;
+  audio.addEventListener("timeupdate", () => {
+    if (app.audioTrack === null) return;
+    const track = TRACKS[app.audioTrack];
+    if (track && audio.currentTime >= track.end) {
+      fadeOutClip();
+    }
+  });
+  audio.addEventListener("ended", () => {
+    app.audioTrack = null;
+    app.targetEnergy = app.state === "panel" ? 0.58 : 0.45;
+  });
+  return audio;
+}
+
+function ensureAudioContext() {
+  if (audioContext) return audioContext;
+  const AudioCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtor) return null;
+
+  audioContext = new AudioCtor();
+  const player = ensureAudio();
+  mediaSource = audioContext.createMediaElementSource(player);
+  clipFilter = audioContext.createBiquadFilter();
+  clipFilter.type = "lowpass";
+  clipFilter.frequency.value = 520;
+  clipFilter.Q.value = 0.9;
+  clipGain = audioContext.createGain();
+  clipGain.gain.value = 0;
+  mediaSource.connect(clipFilter);
+  clipFilter.connect(clipGain);
+  clipGain.connect(audioContext.destination);
+  return audioContext;
+}
+
+function resumeAudioContext() {
+  const context = ensureAudioContext();
+  if (context && context.state === "suspended") {
+    context.resume().catch(() => {});
   }
+  return context;
+}
 
-  const $ = (s, c = document) => c.querySelector(s);
-  const $$ = (s, c = document) => [...c.querySelectorAll(s)];
+function unlockAudio() {
+  const player = ensureAudio();
+  resumeAudioContext();
+  if (audioUnlocked) return;
 
-  /* ── Track data ─────────────────────────────────────────── */
-  const TRACKS = {
-    1: {
-      number: "01", title: "Static Signals",
-      phase: "Phase: Interference", status: "SIGNAL DETECTED",
-      signal: 6, pct: "78%", color: "cold",
-      body: "The first glitches appear. The world feels off — systems flicker, structures crack. Something beneath the surface is starting to fail.",
-      fragment: '"the screens keep splitting / nothing holds its shape"',
-      audio: { src: "audio/static-signals.mp3", start: 36, end: 49 },
-    },
-    2: {
-      number: "02", title: "Drown Tonight",
-      phase: "Phase: Submersion", status: "SIGNAL DEGRADING",
-      signal: 4, pct: "54%", color: "warm",
-      body: "The collapse turns inward. Noise and pressure overwhelm until breathing through the disconnection feels impossible.",
-      fragment: '"sinking past the frequency / where voices used to reach"',
-      audio: { src: "audio/drown-tonight.mp3", start: 82, end: 100 },
-    },
-    3: {
-      number: "03", title: "Ghost",
-      phase: "Phase: Fracture", status: "IDENTITY FRAGMENTED",
-      signal: 3, pct: "32%", color: "ghost",
-      body: "Still physically present, but mentally absent. Identity fractures until the self becomes a ghost inside its own life.",
-      fragment: '"i\'m standing right here / but nothing registers"',
-      audio: { src: "audio/ghost.mp3", start: 11, end: 21 },
-    },
-    4: {
-      number: "04", title: "Neon Graves",
-      phase: "Phase: Collapse", status: "SIGNAL LOST",
-      signal: 1, pct: "08%", color: "critical",
-      body: "Total breakdown. Dead lights and lost signals turn the city into a graveyard of everything that once felt stable.",
-      fragment: '"every light that burned is now a monument to what we lost"',
-      audio: { src: "audio/neon-graves.mp3", start: 90, end: 113 },
-    },
-    5: {
-      number: "05", title: "Light The Fire",
-      phase: "Phase: Defiance", status: "SIGNAL OVERRIDE",
-      signal: 4, pct: "MANUAL", color: "ember",
-      body: "A moment of defiance. Instead of waiting for the system to recover, the protagonist breaks free from it.",
-      fragment: '"burn the protocol / override the silence"',
-      audio: { src: "audio/light-the-fire.mp3", start: 36, end: 49 },
-    },
-    6: {
-      number: "06", title: "We Remain",
-      phase: "Phase: Survival", status: "SIGNAL PERSISTS",
-      signal: 8, pct: "HUMAN", color: "resolve",
-      body: "Silence settles after the collapse. The world is scarred and broken, but something human survives — and keeps transmitting.",
-      fragment: '"after everything / we are still here / still transmitting"',
-      audio: { src: "audio/we-remain.mp3", start: 101, end: 112 },
-    },
-  };
-
-  /* ── State ──────────────────────────────────────────────── */
-  const state = {
-    soundOn: false,
-    explored: new Set(),
-    panelOpen: false,
-    panelTrackId: null,
-    currentState: "gate",
-    holding: false,
-    finaleReady: false,
-    finaleStabilised: false,
-    activeTrack: null,
-  };
-
-  /* ── DOM ────────────────────────────────────────────────── */
-  const html = document.documentElement;
-  const gateLines = $$(".gate__line");
-  const gateControls = $(".gate__controls");
-  const gateHoldZone = $("#gate-hold");
-  const gateProgress = $(".gate__hold-progress");
-  const soundBtn = $(".sound-btn");
-  const nodes = $$(".node");
-  const panel = $("#panel");
-  const panelClose = $(".panel__close");
-  const decodedCount = $("#decoded-count");
-  const integrityFill = $("#integrity-fill");
-  const integrityPct = $("#integrity-pct");
-  const holdIndicator = $("#hold-indicator");
-  const holdIndicatorFill = $(".hold-indicator__fill");
-  const holdIndicatorLabel = $(".hold-indicator__label");
-  const revisitBtn = $("#revisit-btn");
-  const finaleCta = $(".finale__cta-block");
-  const panelFragment = $("#panel-fragment");
-  const panelUnlock = $("#panel-unlock");
-  const panelUnlockFill = $("#panel-unlock-fill");
-  const panelUnlockLabel = $("#panel-unlock-label");
-  const panelFallback = $("#panel-fallback");
-  const panelFallbackLink = $("#panel-fallback-link");
-  const finaleEl = $("#finale");
-
-  /* ═══════════════════════════════════════════════════════════
-     NATIVE AUDIO ENGINE — single shared <audio> element
-     ═══════════════════════════════════════════════════════════ */
-
-  const audioEl = new Audio();
-  audioEl.preload = "none";
-  let audioFadeInterval = null;
-  let audioStopTimer = null;
-  let audioUnlocked = false;
-
-  // Unlock audio on first user interaction — iOS requires this
-  function unlockAudioEl() {
-    if (audioUnlocked) return;
-    audioEl.volume = 0;
-    audioEl.muted = true;
-    const p = audioEl.play();
-    if (p && p.then) {
-      p.then(() => {
-        audioEl.pause();
-        audioEl.muted = false;
-        audioEl.currentTime = 0;
+  player.muted = true;
+  player.volume = 0;
+  const attempt = player.play();
+  if (attempt && attempt.then) {
+    attempt
+      .then(() => {
+        player.pause();
+        player.muted = false;
+        player.volume = 1;
+        player.currentTime = 0;
         audioUnlocked = true;
-        log("audio element unlocked");
-      }).catch(() => {
-        audioEl.muted = false;
-        audioUnlocked = true; // still mark unlocked — the gesture was registered
-        log("audio unlock (gesture registered)");
+      })
+      .catch(() => {
+        player.muted = false;
+        player.volume = 1;
+        audioUnlocked = true;
       });
+  } else {
+    audioUnlocked = true;
+  }
+}
+
+function prepareClip(index, shouldStart) {
+  const track = TRACKS[index];
+  if (!track) return;
+
+  const player = ensureAudio();
+  resumeAudioContext();
+  clearTimeout(audioStopTimer);
+  cancelAnimationFrame(audioFadeFrame);
+
+  if (player.dataset.track !== String(index)) {
+    player.src = track.src;
+    player.dataset.track = String(index);
+  }
+
+  try {
+    player.currentTime = track.start;
+  } catch (error) {
+    player.addEventListener("loadedmetadata", () => {
+      player.currentTime = track.start;
+    }, { once: true });
+  }
+
+  if (clipGain) clipGain.gain.value = 0;
+  if (clipFilter) clipFilter.frequency.value = 430;
+  player.volume = 0;
+  app.audioTrack = index;
+
+  if (shouldStart) {
+    player.play().catch(() => {});
+  }
+}
+
+function animateClip(targetGain, targetFrequency, duration, onDone) {
+  cancelAnimationFrame(audioFadeFrame);
+  const context = audioContext;
+  const fromGain = clipGain ? clipGain.gain.value : 0;
+  const fromFrequency = clipFilter ? clipFilter.frequency.value : targetFrequency;
+  const start = performance.now();
+
+  function frame(now) {
+    const progress = Math.min(1, (now - start) / duration);
+    const eased = progress * progress * (3 - 2 * progress);
+    if (clipGain) clipGain.gain.value = fromGain + (targetGain - fromGain) * eased;
+    if (clipFilter) clipFilter.frequency.value = fromFrequency + (targetFrequency - fromFrequency) * eased;
+    if (progress < 1) {
+      audioFadeFrame = requestAnimationFrame(frame);
+    } else if (onDone) {
+      onDone();
+    }
+  }
+
+  if (context) {
+    frame(performance.now());
+  } else if (onDone) {
+    window.setTimeout(onDone, duration);
+  }
+}
+
+function playRecoveredClip(index) {
+  const track = TRACKS[index];
+  if (!track) return;
+  const player = ensureAudio();
+  resumeAudioContext();
+  prepareClip(index, false);
+  player.muted = false;
+  player.volume = 1;
+
+  const playPromise = player.play();
+  if (playPromise && playPromise.catch) {
+    playPromise.catch(() => {});
+  }
+
+  app.audioTrack = index;
+  app.targetEnergy = 0.94;
+  duckDrone();
+  animateClip(0.92, 15000, 650);
+
+  const duration = Math.max(0.6, track.end - track.start);
+  audioStopTimer = window.setTimeout(() => {
+    fadeOutClip();
+  }, Math.max(0, duration * 1000 - 900));
+}
+
+function fadeOutClip(onDone) {
+  clearTimeout(audioStopTimer);
+  if (!audio || audio.paused) {
+    if (onDone) onDone();
+    return;
+  }
+
+  animateClip(0, 420, 760, () => {
+    audio.pause();
+    audio.currentTime = 0;
+    app.audioTrack = null;
+    app.targetEnergy = app.state === "finale" ? 0.82 : 0.46;
+    restoreDrone();
+    if (onDone) onDone();
+  });
+}
+
+function stopClip() {
+  clearTimeout(audioStopTimer);
+  cancelAnimationFrame(audioFadeFrame);
+  if (clipGain) clipGain.gain.value = 0;
+  if (clipFilter) clipFilter.frequency.value = 430;
+  if (audio) {
+    audio.pause();
+    audio.currentTime = 0;
+  }
+  app.audioTrack = null;
+  restoreDrone();
+}
+
+function createNoiseBuffer() {
+  const context = resumeAudioContext();
+  if (!context || noiseBuffer) return noiseBuffer;
+
+  const length = context.sampleRate * 0.35;
+  noiseBuffer = context.createBuffer(1, length, context.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < length; i += 1) {
+    data[i] = Math.random() * 2 - 1;
+  }
+  return noiseBuffer;
+}
+
+function pulseHoldSound(intensity) {
+  const context = resumeAudioContext();
+  if (!context) return;
+
+  const osc = context.createOscillator();
+  const gain = context.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(36 + intensity * 42, context.currentTime);
+  gain.gain.setValueAtTime(0.012 + intensity * 0.032, context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.07 + intensity * 0.05);
+  osc.connect(gain);
+  gain.connect(context.destination);
+  osc.start();
+  osc.stop(context.currentTime + 0.14);
+}
+
+function playLockSound() {
+  const context = resumeAudioContext();
+  if (!context) return;
+
+  const click = context.createOscillator();
+  const clickGain = context.createGain();
+  click.type = "square";
+  click.frequency.setValueAtTime(1200, context.currentTime);
+  click.frequency.exponentialRampToValueAtTime(190, context.currentTime + 0.045);
+  clickGain.gain.setValueAtTime(0.055, context.currentTime);
+  clickGain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.07);
+  click.connect(clickGain);
+  clickGain.connect(context.destination);
+  click.start();
+  click.stop(context.currentTime + 0.08);
+
+  const sub = context.createOscillator();
+  const subGain = context.createGain();
+  sub.type = "sine";
+  sub.frequency.setValueAtTime(48, context.currentTime + 0.02);
+  subGain.gain.setValueAtTime(0.045, context.currentTime + 0.02);
+  subGain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.15);
+  sub.connect(subGain);
+  subGain.connect(context.destination);
+  sub.start(context.currentTime + 0.02);
+  sub.stop(context.currentTime + 0.16);
+}
+
+function playGlitchBurst() {
+  const context = resumeAudioContext();
+  const buffer = createNoiseBuffer();
+  if (!context || !buffer) return;
+
+  for (let i = 0; i < 4; i += 1) {
+    const time = context.currentTime + i * 0.055;
+    const source = context.createBufferSource();
+    const filter = context.createBiquadFilter();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(560 + i * 430, time);
+    filter.Q.setValueAtTime(2.2, time);
+    gain.gain.setValueAtTime(0.045, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.045);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(context.destination);
+    source.start(time);
+    source.stop(time + 0.055);
+  }
+}
+
+function updateHoldTactile(progress) {
+  const thresholds = [0.15, 0.3, 0.45, 0.6, 0.72, 0.82, 0.9, 0.95];
+  for (let index = 0; index < thresholds.length; index += 1) {
+    if (progress >= thresholds[index] && tactileIndex < index) {
+      tactileIndex = index;
+      pulseHoldSound(0.28 + index * 0.08);
+      if (navigator.vibrate) {
+        try {
+          navigator.vibrate(Math.round(5 + index * 2));
+        } catch (error) {}
+      }
+    }
+  }
+}
+
+function resetTactile() {
+  tactileIndex = -1;
+}
+
+function startDrone() {
+  const context = resumeAudioContext();
+  if (!context || droneOsc) return;
+
+  const buffer = createNoiseBuffer();
+  droneGain = context.createGain();
+  droneGain.gain.value = 0;
+  droneFilter = context.createBiquadFilter();
+  droneFilter.type = "lowpass";
+  droneFilter.frequency.value = 180;
+  droneFilter.Q.value = 0.55;
+
+  droneOsc = context.createOscillator();
+  droneOsc.type = "sine";
+  droneOsc.frequency.value = 44;
+  droneOsc.connect(droneFilter);
+
+  if (buffer) {
+    droneNoise = context.createBufferSource();
+    droneNoise.buffer = buffer;
+    droneNoise.loop = true;
+    droneNoise.connect(droneFilter);
+  }
+
+  droneFilter.connect(droneGain);
+  droneGain.connect(context.destination);
+  droneOsc.start();
+  if (droneNoise) droneNoise.start();
+  restoreDrone();
+}
+
+function setDroneLevel(value, duration = 0.8) {
+  if (!droneGain || !audioContext) return;
+  const now = audioContext.currentTime;
+  droneGain.gain.cancelScheduledValues(now);
+  droneGain.gain.setValueAtTime(droneGain.gain.value, now);
+  droneGain.gain.linearRampToValueAtTime(value, now + duration);
+}
+
+function duckDrone() {
+  setDroneLevel(0.003, 0.45);
+}
+
+function restoreDrone() {
+  if (app.state === "gate") return;
+  setDroneLevel(0.018, 1.2);
+}
+
+function stopDrone() {
+  if (!audioContext) return;
+  setDroneLevel(0, 0.4);
+  window.setTimeout(() => {
+    try {
+      if (droneOsc) droneOsc.stop();
+      if (droneNoise) droneNoise.stop();
+    } catch (error) {}
+    droneOsc = null;
+    droneNoise = null;
+    droneGain = null;
+    droneFilter = null;
+  }, 450);
+}
+
+function updateProgressUI() {
+  const count = countRecovered();
+  const integrity = integrityForCount(count);
+
+  html.dataset.explored = String(count);
+  body.dataset.explored = String(count);
+  setText(refs.count, String(count));
+  setText(refs.integrity, `${integrity}% INTEGRITY`);
+
+  refs.nodes.forEach((node) => {
+    const index = Number(node.dataset.track);
+    const recovered = app.recovered.has(index);
+    const active = app.activeTrack === index;
+    const track = TRACKS[index];
+    node.classList.toggle("is-recovered", recovered);
+    node.classList.toggle("is-active", active);
+    node.setAttribute(
+      "aria-label",
+      `${track.number} ${track.title}, ${track.frequency}, ${recovered ? "recovered" : "locked"}`
+    );
+  });
+
+  if (app.state !== "panel" && app.state !== "finale") {
+    setText(refs.fragment, count === 6 ? "FINAL MESSAGE READY" : "FRAGMENTS LOCKED");
+  }
+}
+
+function setMachineState(next) {
+  app.state = next;
+  html.dataset.state = next;
+  body.dataset.state = next;
+  if (next === "finale") {
+    html.dataset.final = app.finaleDecoded ? "decoded" : "sequence";
+    body.dataset.final = app.finaleDecoded ? "decoded" : "sequence";
+  } else {
+    delete html.dataset.final;
+    delete body.dataset.final;
+  }
+
+  if (refs.listen) {
+    const gated = next === "gate";
+    refs.listen.setAttribute("aria-disabled", String(gated));
+    refs.listen.tabIndex = gated ? -1 : 0;
+  }
+
+  if (next === "gate") {
+    setText(refs.state, "SIGNAL LOST");
+    setText(refs.lock, "LOCK: NONE");
+    setText(refs.carrier, "CARRIER: DEAD");
+    setText(refs.frequency, "--.- MHz");
+    setText(refs.fragment, "0 OF 6 BURIED");
+    setText(refs.coreLabel, "DF-06");
+    setText(refs.coreAction, "HOLD");
+    setText(refs.coreSub, "BEGIN TRANSMISSION");
+    refs.panel?.setAttribute("aria-hidden", "true");
+    app.targetEnergy = 0.12;
+  }
+
+  if (next === "sigmap") {
+    const count = countRecovered();
+    setText(refs.state, count === 6 ? "ALL SIGNALS DECODED" : "SIGNAL ACTIVE");
+    setText(refs.lock, count === 6 ? "LOCK: COMPLETE" : "LOCK: PARTIAL");
+    setText(refs.carrier, "CARRIER: FOUND");
+    setText(refs.frequency, app.activeTrack === null ? "SCAN READY" : TRACKS[app.activeTrack].frequency);
+    setText(refs.fragment, count === 6 ? "FINAL MESSAGE READY" : "SELECT FREQUENCY");
+    setText(refs.coreLabel, count === 6 ? "100%" : "NODE ACTIVE");
+    setText(refs.coreAction, count === 6 ? "FINAL" : "TUNE");
+    setText(refs.coreSub, count === 6 ? "MESSAGE UNLOCKED" : "RECOVER FRAGMENTS");
+    refs.panel?.setAttribute("aria-hidden", "true");
+    app.targetEnergy = 0.42 + count * 0.07;
+  }
+
+  if (next === "panel") {
+    refs.panel?.setAttribute("aria-hidden", "false");
+    setText(refs.state, "TUNING");
+    setText(refs.lock, "LOCK: MANUAL");
+    setText(refs.carrier, "CARRIER: NARROW");
+    setText(refs.coreLabel, app.activeTrack === null ? "NODE" : TRACKS[app.activeTrack].number);
+    setText(refs.coreAction, "HOLD");
+    setText(refs.coreSub, "RECOVER FRAGMENT");
+    app.targetEnergy = 0.56 + (app.activeTrack ?? 0) * 0.035;
+  }
+
+  if (next === "finale") {
+    refs.panel?.setAttribute("aria-hidden", "true");
+    setText(refs.state, app.finaleDecoded ? "WE REMAIN" : "FINAL MESSAGE LOCKED");
+    setText(refs.lock, "LOCK: HUMAN");
+    setText(refs.carrier, "CARRIER: RESIDUAL");
+    setText(refs.frequency, "144.0 MHz");
+    setText(refs.fragment, app.finaleDecoded ? "MESSAGE STABLE" : "STABILISE FINAL MESSAGE");
+    setText(refs.coreLabel, app.finaleDecoded ? "6/6" : "DF-06");
+    setText(refs.coreAction, app.finaleDecoded ? "ONE" : "HOLD");
+    setText(refs.coreSub, app.finaleDecoded ? "SIGNAL STABLE" : "FINAL MESSAGE");
+    app.targetEnergy = app.finaleDecoded ? 0.96 : 0.78;
+  }
+
+  updateProgressUI();
+}
+
+function syncPanel(index) {
+  const track = TRACKS[index];
+  const recovered = app.recovered.has(index);
+  const nextCount = recovered ? countRecovered() : Math.min(6, countRecovered() + 1);
+
+  setText(refs.panelNumber, track.number);
+  setText(refs.panelStatus, recovered ? "RECOVERED" : countRecovered() > 0 ? "PARTIAL" : "CORRUPTED");
+  setText(refs.panelTitle, track.title);
+  setText(refs.panelFragment, recovered ? track.fragment : corrupt(track.fragment, 4));
+  setText(refs.panelFrequency, track.frequency);
+  setText(refs.panelIntegrity, `${integrityForCount(nextCount)}% TARGET`);
+  setText(refs.frequency, track.frequency);
+  setText(refs.fragment, recovered ? "FRAGMENT RECOVERED" : "FRAGMENT DETECTED");
+  setText(refs.panelHoldLabel, recovered ? "FRAGMENT RECOVERED / CLIP ARMED" : "HOLD TO RECOVER FRAGMENT");
+
+  if (refs.panelHold) {
+    refs.panelHold.disabled = recovered;
+    refs.panelHold.setAttribute("aria-disabled", String(recovered));
+    refs.panelHold.classList.toggle("is-recovered", recovered);
+  }
+  refs.panelFragment?.classList.toggle("corrupted", !recovered);
+  refs.panelFragment?.classList.toggle("is-stable", recovered);
+  setPanelFill(recovered ? 1 : 0);
+  updateProgressUI();
+}
+
+function openPanel(index) {
+  if (app.state !== "sigmap") return;
+  app.activeTrack = index;
+  syncPanel(index);
+  setMachineState("panel");
+}
+
+function closePanel() {
+  if (app.state !== "panel") return;
+  cancelHold();
+  const shouldEnterFinale = app.pendingFinale;
+  app.pendingFinale = false;
+  fadeOutClip(() => {
+    if (shouldEnterFinale) {
+      enterFinale();
     } else {
-      audioUnlocked = true;
+      setMachineState("sigmap");
     }
-  }
-
-  // Global first-interaction unlock
-  document.addEventListener("pointerdown", function firstTouch() {
-    unlockAudioEl();
-    initAudio(); // also unlock Web Audio for UI sounds
-    if (actx && actx.state === "suspended") actx.resume();
-    document.removeEventListener("pointerdown", firstTouch, true);
-  }, { capture: true });
-
-  /**
-   * Preload a track's audio (set src, don't play).
-   */
-  function preloadTrack(trackId) {
-    const t = TRACKS[trackId];
-    if (!t) return;
-    // Only change src if different
-    if (audioEl.dataset.track !== String(trackId)) {
-      audioEl.src = t.audio.src;
-      audioEl.dataset.track = String(trackId);
-      audioEl.preload = "auto";
-      log("preloading track", trackId, t.title);
-    }
-  }
-
-  /**
-   * Play a track preview. Must be called in user interaction context.
-   * Sets src if needed, seeks to start, plays, fades in, schedules stop.
-   */
-  function playTrack(trackId) {
-    if (!state.soundOn) return;
-
-    const t = TRACKS[trackId];
-    if (!t) return;
-
-    // Stop any current playback
-    stopTrack();
-
-    log("playTrack:", trackId, t.title, "from", t.audio.start, "to", t.audio.end);
-    state.activeTrack = trackId;
-    duckDrone();
-
-    // Set source if needed
-    if (audioEl.dataset.track !== String(trackId)) {
-      audioEl.src = t.audio.src;
-      audioEl.dataset.track = String(trackId);
-    }
-
-    // Seek to start and play at volume 0
-    audioEl.currentTime = t.audio.start;
-    audioEl.volume = 0;
-    log("currentTime set to", t.audio.start);
-
-    const playPromise = audioEl.play();
-    if (playPromise && playPromise.then) {
-      playPromise.then(() => {
-        log("play() succeeded: track", trackId);
-      }).catch((e) => {
-        log("play() failed: track", trackId, e.message);
-        showFallback(trackId);
-      });
-    }
-    log("play() called: track", trackId);
-
-    // Fade in over 400ms
-    clearInterval(audioFadeInterval);
-    let vol = 0;
-    log("fade-in started: track", trackId);
-    audioFadeInterval = setInterval(() => {
-      vol = Math.min(vol + 0.05, 1);
-      audioEl.volume = vol;
-      if (vol >= 1) {
-        clearInterval(audioFadeInterval);
-        audioFadeInterval = null;
-        log("fade-in complete: track", trackId);
-      }
-    }, 20); // 0.05 * 20 steps = 1.0 over 400ms
-
-    // Schedule fade-out before end
-    const duration = t.audio.end - t.audio.start;
-    const fadeOutAt = Math.max((duration - 0.8) * 1000, 0);
-
-    clearTimeout(audioStopTimer);
-    audioStopTimer = setTimeout(() => {
-      log("stop timer fired: track", trackId);
-      fadeOutTrack();
-    }, fadeOutAt);
-  }
-
-  /**
-   * Fade out and pause.
-   */
-  function fadeOutTrack() {
-    clearInterval(audioFadeInterval);
-    clearTimeout(audioStopTimer);
-
-    if (audioEl.paused) return;
-
-    log("fade-out started");
-    let vol = audioEl.volume;
-    audioFadeInterval = setInterval(() => {
-      vol = Math.max(vol - 0.05, 0);
-      audioEl.volume = vol;
-      if (vol <= 0) {
-        clearInterval(audioFadeInterval);
-        audioFadeInterval = null;
-        audioEl.pause();
-        state.activeTrack = null;
-        log("fade-out complete, paused");
-        unduckDrone();
-      }
-    }, 20);
-  }
-
-  /**
-   * Immediately stop playback.
-   */
-  function stopTrack() {
-    clearInterval(audioFadeInterval);
-    audioFadeInterval = null;
-    clearTimeout(audioStopTimer);
-    audioStopTimer = null;
-
-    if (!audioEl.paused) {
-      audioEl.volume = 0;
-      audioEl.pause();
-      log("stopped track:", state.activeTrack);
-    }
-    state.activeTrack = null;
-    unduckDrone();
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     WEB AUDIO — UI feedback sounds (ticks + completion chord)
-     ═══════════════════════════════════════════════════════════ */
-  let actx = null;
-
-  function initAudio() {
-    if (actx) return;
-    try {
-      actx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (e) {
-      actx = null;
-    }
-  }
-
-  function playCompletionSound() {
-    if (!actx || !state.soundOn) return;
-    try {
-      [262, 330, 392, 523].forEach((freq, i) => {
-        const osc = actx.createOscillator();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(freq, actx.currentTime);
-        const g = actx.createGain();
-        g.gain.setValueAtTime(0, actx.currentTime);
-        g.gain.linearRampToValueAtTime(0.08, actx.currentTime + 0.1 + i * 0.15);
-        g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 3);
-        osc.connect(g);
-        g.connect(actx.destination);
-        osc.start(actx.currentTime + i * 0.15);
-        osc.stop(actx.currentTime + 3.5);
-      });
-    } catch (e) { /* ignore */ }
-  }
-
-  function playHoldTick() {
-    if (!actx || !state.soundOn) return;
-    try {
-      const osc = actx.createOscillator();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(880, actx.currentTime);
-      const g = actx.createGain();
-      g.gain.setValueAtTime(0.03, actx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.15);
-      osc.connect(g);
-      g.connect(actx.destination);
-      osc.start();
-      osc.stop(actx.currentTime + 0.2);
-    } catch (e) { /* ignore */ }
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     SIGNAL FX ENGINE — procedural glitch/noise via Web Audio
-     ═══════════════════════════════════════════════════════════ */
-  let noiseBuffer = null;
-
-  function createNoiseBuffer() {
-    if (!actx || noiseBuffer) return;
-    const len = actx.sampleRate * 2;
-    noiseBuffer = actx.createBuffer(1, len, actx.sampleRate);
-    const data = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-  }
-
-  function makeDistortionCurve(amount) {
-    const n = 256;
-    const curve = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const x = (i * 2) / n - 1;
-      curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
-    }
-    return curve;
-  }
-
-  function playGlitchBurst(intensity, duration) {
-    if (!actx || !state.soundOn) return;
-    createNoiseBuffer();
-    if (!noiseBuffer) return;
-    try {
-      const src = actx.createBufferSource();
-      src.buffer = noiseBuffer;
-      const filter = actx.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.frequency.setValueAtTime(800 + intensity * 2000, actx.currentTime);
-      filter.Q.setValueAtTime(1 + intensity * 3, actx.currentTime);
-      const dist = actx.createWaveShaper();
-      dist.curve = makeDistortionCurve(intensity * 40);
-      const gain = actx.createGain();
-      const vol = Math.min(intensity * 0.12, 0.15);
-      gain.gain.setValueAtTime(vol, actx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + duration);
-      src.connect(filter);
-      filter.connect(dist);
-      dist.connect(gain);
-      gain.connect(actx.destination);
-      src.start();
-      src.stop(actx.currentTime + duration);
-    } catch (e) { /* ignore */ }
-  }
-
-  function playSignalCollapse() {
-    if (!actx || !state.soundOn) return;
-    createNoiseBuffer();
-    if (!noiseBuffer) return;
-    try {
-      const src = actx.createBufferSource();
-      src.buffer = noiseBuffer;
-      const filter = actx.createBiquadFilter();
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(4000, actx.currentTime);
-      filter.frequency.exponentialRampToValueAtTime(80, actx.currentTime + 0.6);
-      const gain = actx.createGain();
-      gain.gain.setValueAtTime(0.1, actx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.7);
-      src.connect(filter);
-      filter.connect(gain);
-      gain.connect(actx.destination);
-      src.start();
-      src.stop(actx.currentTime + 0.8);
-    } catch (e) { /* ignore */ }
-  }
-
-  // Sustained noise during hold — starts harsh, cleans up with progress
-  let holdNoiseSrc = null;
-  let holdNoiseGain = null;
-  let holdNoiseFilter = null;
-
-  function startHoldNoise() {
-    if (!actx || !state.soundOn) return;
-    createNoiseBuffer();
-    if (!noiseBuffer) return;
-    try {
-      holdNoiseSrc = actx.createBufferSource();
-      holdNoiseSrc.buffer = noiseBuffer;
-      holdNoiseSrc.loop = true;
-      holdNoiseFilter = actx.createBiquadFilter();
-      holdNoiseFilter.type = "lowpass";
-      holdNoiseFilter.frequency.setValueAtTime(3000, actx.currentTime);
-      holdNoiseGain = actx.createGain();
-      holdNoiseGain.gain.setValueAtTime(0.04, actx.currentTime);
-      holdNoiseSrc.connect(holdNoiseFilter);
-      holdNoiseFilter.connect(holdNoiseGain);
-      holdNoiseGain.connect(actx.destination);
-      holdNoiseSrc.start();
-    } catch (e) { /* ignore */ }
-  }
-
-  function updateHoldNoise(progress) {
-    if (!holdNoiseFilter || !holdNoiseGain) return;
-    try {
-      // As progress increases, filter cleans up (frequency drops) and volume drops
-      const freq = 3000 - progress * 2600; // 3000 → 400
-      const vol = 0.04 - progress * 0.035; // 0.04 → 0.005
-      holdNoiseFilter.frequency.setValueAtTime(Math.max(freq, 100), actx.currentTime);
-      holdNoiseGain.gain.setValueAtTime(Math.max(vol, 0.002), actx.currentTime);
-    } catch (e) { /* ignore */ }
-  }
-
-  function stopHoldNoise() {
-    try {
-      if (holdNoiseSrc) { holdNoiseSrc.stop(); holdNoiseSrc = null; }
-      holdNoiseGain = null;
-      holdNoiseFilter = null;
-    } catch (e) { /* ignore */ }
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     AMBIENT DRONE — sub-bass texture on sigmap when no track plays
-     ═══════════════════════════════════════════════════════════ */
-  let droneOsc = null;
-  let droneNoise = null;
-  let droneGain = null;
-  let droneActive = false;
-  const DRONE_VOL = 0.045;
-
-  function startDrone() {
-    if (droneActive || !actx || !state.soundOn) return;
-    createNoiseBuffer();
-    try {
-      droneGain = actx.createGain();
-      droneGain.gain.setValueAtTime(0, actx.currentTime);
-      droneGain.gain.linearRampToValueAtTime(DRONE_VOL, actx.currentTime + 1.5);
-      droneGain.connect(actx.destination);
-
-      // Sub-bass oscillator — slow LFO modulated
-      droneOsc = actx.createOscillator();
-      droneOsc.type = "sine";
-      droneOsc.frequency.setValueAtTime(42, actx.currentTime);
-      const lfo = actx.createOscillator();
-      lfo.type = "sine";
-      lfo.frequency.setValueAtTime(0.15, actx.currentTime);
-      const lfoGain = actx.createGain();
-      lfoGain.gain.setValueAtTime(6, actx.currentTime);
-      lfo.connect(lfoGain);
-      lfoGain.connect(droneOsc.frequency);
-      lfo.start();
-      droneOsc._lfo = lfo;
-
-      const oscGain = actx.createGain();
-      oscGain.gain.setValueAtTime(0.7, actx.currentTime);
-      droneOsc.connect(oscGain);
-      oscGain.connect(droneGain);
-      droneOsc.start();
-
-      // Filtered noise layer — dark texture
-      if (noiseBuffer) {
-        droneNoise = actx.createBufferSource();
-        droneNoise.buffer = noiseBuffer;
-        droneNoise.loop = true;
-        const noiseFilter = actx.createBiquadFilter();
-        noiseFilter.type = "lowpass";
-        noiseFilter.frequency.setValueAtTime(120, actx.currentTime);
-        noiseFilter.Q.setValueAtTime(1, actx.currentTime);
-        const noiseGain = actx.createGain();
-        noiseGain.gain.setValueAtTime(0.3, actx.currentTime);
-        droneNoise.connect(noiseFilter);
-        noiseFilter.connect(noiseGain);
-        noiseGain.connect(droneGain);
-        droneNoise.start();
-      }
-
-      droneActive = true;
-    } catch (e) { /* ignore */ }
-  }
-
-  function stopDrone() {
-    if (!droneActive) return;
-    try {
-      if (droneGain) {
-        droneGain.gain.linearRampToValueAtTime(0, actx.currentTime + 0.8);
-      }
-      setTimeout(() => {
-        try {
-          if (droneOsc) { droneOsc.stop(); if (droneOsc._lfo) droneOsc._lfo.stop(); droneOsc = null; }
-          if (droneNoise) { droneNoise.stop(); droneNoise = null; }
-          droneGain = null;
-        } catch (e) {}
-      }, 900);
-    } catch (e) {}
-    droneActive = false;
-  }
-
-  function duckDrone() {
-    if (!droneActive || !droneGain) return;
-    try { droneGain.gain.linearRampToValueAtTime(0, actx.currentTime + 0.4); } catch (e) {}
-  }
-
-  function unduckDrone() {
-    if (!droneActive || !droneGain) return;
-    try { droneGain.gain.linearRampToValueAtTime(DRONE_VOL, actx.currentTime + 0.8); } catch (e) {}
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     DRONE RESOLVE — transforms dark drone into warm clean fade
-     Called at finale hold completion instead of abrupt stop
-     ═══════════════════════════════════════════════════════════ */
-  function resolveDrone() {
-    if (!droneActive || !actx) {
-      stopDrone();
-      return;
-    }
-    try {
-      // Shift frequency: 42Hz → 65Hz (warm low C)
-      if (droneOsc) {
-        droneOsc.frequency.linearRampToValueAtTime(65, actx.currentTime + 3);
-        // Slow down LFO — from nervous 0.15Hz to calm 0.04Hz
-        if (droneOsc._lfo) {
-          droneOsc._lfo.frequency.linearRampToValueAtTime(0.04, actx.currentTime + 2);
-        }
-      }
-      // Fade out noise layer quickly — leaving only clean sine
-      if (droneNoise) {
-        try {
-          const noiseParent = droneNoise;
-          setTimeout(() => {
-            try { noiseParent.stop(); } catch (e) {}
-          }, 2000);
-        } catch (e) {}
-        droneNoise = null;
-      }
-      // Gentle volume swell then long fade to silence
-      if (droneGain) {
-        droneGain.gain.linearRampToValueAtTime(DRONE_VOL * 1.3, actx.currentTime + 1.5);
-        droneGain.gain.linearRampToValueAtTime(DRONE_VOL * 0.8, actx.currentTime + 4);
-        droneGain.gain.linearRampToValueAtTime(0, actx.currentTime + 8);
-      }
-      // Clean up after fade completes
-      setTimeout(() => {
-        try {
-          if (droneOsc) { droneOsc.stop(); if (droneOsc._lfo) droneOsc._lfo.stop(); droneOsc = null; }
-          droneGain = null;
-        } catch (e) {}
-      }, 8500);
-    } catch (e) {
-      stopDrone();
-    }
-    droneActive = false;
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     TACTILE FEEDBACK — cross-platform feel layer
-     Audio pulses + visual micro-jitter on all browsers.
-     Native vibration where available (feature-detected, silent no-op otherwise).
-     ═══════════════════════════════════════════════════════════ */
-  const canVibrate = typeof navigator.vibrate === "function";
-  const atmosEl = $(".atmos");
-  let tactileIdx = -1;
-
-  const tactile = {
-    /* Subtle resistance pulse — sub-bass thump + micro-jitter + optional vibrate */
-    pulse(intensity) {
-      if (canVibrate) try { navigator.vibrate(Math.round(intensity * 20)); } catch (e) {}
-      this._thump(intensity);
-      this._jitter(intensity);
-    },
-
-    /* Crisp lock — sharp audiovisual "click into place" */
-    lock() {
-      if (canVibrate) try { navigator.vibrate([15, 40, 25]); } catch (e) {}
-      this._click();
-      this._flash("lock");
-    },
-
-    /* Rough breakup — stuttered noise + visual shake */
-    fail() {
-      if (canVibrate) try { navigator.vibrate([5, 25, 5, 25, 5]); } catch (e) {}
-      this._stutter();
-      this._flash("fail");
-    },
-
-    /* Per-frame during hold — escalating resistance via pulse rate + intensity */
-    resist(progress) {
-      // 8 thresholds, packed denser near lock for urgency
-      const thresholds = [0.15, 0.30, 0.45, 0.60, 0.72, 0.82, 0.90, 0.95];
-      for (let i = 0; i < thresholds.length; i++) {
-        if (progress >= thresholds[i] && tactileIdx < i) {
-          tactileIdx = i;
-          this.pulse(0.3 + i * 0.1);
-        }
-      }
-    },
-
-    reset() { tactileIdx = -1; },
-
-    /* ── Internal: audio ──────────────────────────── */
-    _thump(intensity) {
-      if (!actx || !state.soundOn) return;
-      try {
-        const osc = actx.createOscillator();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(35 + intensity * 35, actx.currentTime);
-        const g = actx.createGain();
-        g.gain.setValueAtTime(0.015 + intensity * 0.04, actx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.06 + intensity * 0.04);
-        osc.connect(g);
-        g.connect(actx.destination);
-        osc.start();
-        osc.stop(actx.currentTime + 0.12);
-      } catch (e) {}
-    },
-
-    _click() {
-      if (!actx || !state.soundOn) return;
-      try {
-        // Sharp transient
-        const osc = actx.createOscillator();
-        osc.type = "square";
-        osc.frequency.setValueAtTime(1200, actx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(200, actx.currentTime + 0.04);
-        const g = actx.createGain();
-        g.gain.setValueAtTime(0.06, actx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.06);
-        osc.connect(g);
-        g.connect(actx.destination);
-        osc.start();
-        osc.stop(actx.currentTime + 0.08);
-        // Sub-bass follow-through
-        const sub = actx.createOscillator();
-        sub.type = "sine";
-        sub.frequency.setValueAtTime(50, actx.currentTime);
-        const sg = actx.createGain();
-        sg.gain.setValueAtTime(0.05, actx.currentTime + 0.02);
-        sg.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.12);
-        sub.connect(sg);
-        sg.connect(actx.destination);
-        sub.start(actx.currentTime + 0.02);
-        sub.stop(actx.currentTime + 0.15);
-      } catch (e) {}
-    },
-
-    _stutter() {
-      if (!actx || !state.soundOn) return;
-      createNoiseBuffer();
-      if (!noiseBuffer) return;
-      try {
-        for (let i = 0; i < 4; i++) {
-          const t = actx.currentTime + i * 0.06;
-          const src = actx.createBufferSource();
-          src.buffer = noiseBuffer;
-          const filter = actx.createBiquadFilter();
-          filter.type = "bandpass";
-          filter.frequency.setValueAtTime(600 + i * 400, t);
-          filter.Q.setValueAtTime(2, t);
-          const g = actx.createGain();
-          g.gain.setValueAtTime(0.06, t);
-          g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
-          src.connect(filter);
-          filter.connect(g);
-          g.connect(actx.destination);
-          src.start(t);
-          src.stop(t + 0.05);
-        }
-      } catch (e) {}
-    },
-
-    /* ── Internal: visual ─────────────────────────── */
-    _jitter(intensity) {
-      if (!atmosEl) return;
-      const px = (Math.random() - 0.5) * intensity * 3;
-      atmosEl.style.transform = "translate(" + px.toFixed(1) + "px, 0)";
-      setTimeout(() => { atmosEl.style.transform = ""; }, 60);
-    },
-
-    _flash(type) {
-      if (!atmosEl) return;
-      atmosEl.classList.add("is-tactile-" + type);
-      const dur = type === "lock" ? 150 : 250;
-      setTimeout(() => { atmosEl.classList.remove("is-tactile-" + type); }, dur);
-    },
-  };
-
-  /* ── State Machine ──────────────────────────────────────── */
-  function setState(name) {
-    state.currentState = name;
-    html.dataset.state = name;
-
-    if (name === "sigmap" || name === "finale") {
-      soundBtn.classList.add("is-visible");
-    }
-    if (name === "sigmap") {
-      playGlitchBurst(0.8, 0.3);
-      startDrone();
-    }
-    if (name === "finale") {
-      stopTrack();
-      playSignalCollapse();
-      startFinaleSequence();
-      // Drone stays alive — it transforms during the finale hold completion
-    }
-  }
-
-  /* ── Finale Sequence — phased reveal ──────────────────── */
-  function startFinaleSequence() {
-    const lost = $("#finale-lost");
-    const detected = $("#finale-detected");
-    const holdPrompt = $("#finale-hold-prompt");
-
-    state.finaleReady = false;
-    state.finaleStabilised = false;
-
-    // Phase 1: "signal lost" fades in
-    setTimeout(() => {
-      if (lost) lost.classList.add("is-visible");
-    }, 800);
-
-    // Phase 1→2: fade out "signal lost"
-    setTimeout(() => {
-      if (lost) lost.classList.remove("is-visible");
-    }, 3200);
-
-    // Phase 2: "residual frequency detected" fades in
-    setTimeout(() => {
-      if (detected) detected.classList.add("is-visible");
-    }, 4200);
-
-    // Phase 2→3: fade out "detected"
-    setTimeout(() => {
-      if (detected) detected.classList.remove("is-visible");
-    }, 6500);
-
-    // Phase 3: "Hold to stabilise" — clear and legible
-    setTimeout(() => {
-      if (holdPrompt) holdPrompt.classList.add("is-visible");
-      state.finaleReady = true;
-      log("finale ready for hold interaction");
-    }, 7500);
-  }
-
-  /* ── Gate Boot ──────────────────────────────────────────── */
-  function runBoot() {
-    gateLines.forEach((line) => {
-      const d = parseInt(line.dataset.delay, 10) || 0;
-      const hasGlitch = line.hasAttribute("data-glitch");
-
-      if (hasGlitch) {
-        // Glitch: briefly show corrupted, then settle into typed
-        setTimeout(() => {
-          line.classList.add("is-glitching");
-          setTimeout(() => {
-            line.classList.remove("is-glitching");
-            line.classList.add("is-typed");
-          }, 180);
-        }, d);
-      } else {
-        setTimeout(() => line.classList.add("is-typed"), d);
-      }
-    });
-    const last = Math.max(
-      ...gateLines.map((l) => parseInt(l.dataset.delay, 10) || 0)
-    );
-    setTimeout(() => gateControls.classList.add("is-revealed"), last + 700);
-  }
-
-  /* ── Gate Sound Toggle ────────────────────────────────────── */
-  const gateSoundToggle = $("#gate-sound-toggle");
-  if (gateSoundToggle) {
-    gateSoundToggle.addEventListener("click", () => {
-      // Always init audio on any tap — user gesture context
-      unlockAudioEl();
-      initAudio();
-      if (actx && actx.state === "suspended") actx.resume();
-
-      state.soundOn = !state.soundOn;
-      gateSoundToggle.dataset.on = String(state.soundOn);
-      gateSoundToggle.dataset.tapped = "true";
-      const label = $(".gate__sound-label", gateSoundToggle);
-      if (label) label.textContent = state.soundOn ? "Sound on" : "Sound off";
-    });
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     HOLD ENGINE — used by gate, panel unlock, and finale
-     ═══════════════════════════════════════════════════════════ */
-  const GATE_HOLD_TIME = 1500;
-  const UNLOCK_HOLD_TIME = 600;
-  const FINALE_HOLD_TIME = 2000;
-
-  let holdStart = 0;
-  let holdRaf = null;
-  let holdContext = null;
-
-  function setHolding(isHolding) {
-    state.holding = isHolding;
-    html.dataset.holding = String(isHolding);
-    if (state.currentState === "finale") {
-      finaleEl.dataset.holding = String(isHolding);
-    }
-  }
-
-  function startHold(context) {
-    if (holdRaf) return;
-    holdContext = context;
-    holdStart = performance.now();
-    setHolding(true);
-    playHoldTick();
-    tactile.reset();
-    tactile.pulse(0.3);
-    startHoldNoise();
-
-    if (context === "gate" && gateHoldZone) {
-      gateHoldZone.classList.add("is-holding");
-    }
-    if (context === "unlock" && panelUnlock) {
-      panelUnlock.classList.add("is-holding");
-    }
-    if (context === "finale") {
-      holdIndicator.classList.add("is-visible");
-      holdIndicatorLabel.textContent = "Hold to stabilise";
-    }
-
-    holdRaf = requestAnimationFrame(updateHoldProgress);
-  }
-
-  function updateHoldProgress() {
-    const elapsed = performance.now() - holdStart;
-    let duration;
-    if (holdContext === "gate") duration = GATE_HOLD_TIME;
-    else if (holdContext === "unlock") duration = UNLOCK_HOLD_TIME;
-    else duration = FINALE_HOLD_TIME;
-
-    const progress = Math.min(elapsed / duration, 1);
-
-    // Update hold noise — cleans up as progress increases
-    updateHoldNoise(progress);
-
-    // Tactile resistance — escalating pulses, denser near lock
-    tactile.resist(progress);
-
-    if (holdContext === "gate" && gateProgress) {
-      gateProgress.style.width = progress * 100 + "%";
-    }
-    if (holdContext === "unlock" && panelUnlockFill) {
-      panelUnlockFill.style.width = progress * 100 + "%";
-    }
-    if (holdContext === "finale" && holdIndicatorFill) {
-      holdIndicatorFill.style.strokeDashoffset = String(169.65 * (1 - progress));
-    }
-
-    if (progress >= 1) {
-      completeHold();
-      return;
-    }
-    holdRaf = requestAnimationFrame(updateHoldProgress);
-  }
-
-  function completeHold() {
-    if (holdRaf) cancelAnimationFrame(holdRaf);
-    holdRaf = null;
-    stopHoldNoise();
-    tactile.lock();
-
-    /* ── Gate ─────────────────────────────────────────── */
-    if (holdContext === "gate") {
-      soundBtn.setAttribute("data-active", String(state.soundOn));
-      setState("sigmap");
-      resetHoldVisuals();
-    }
-
-    /* ── Panel unlock — decode fragment + play audio ──── */
-    else if (holdContext === "unlock") {
-      const trackId = state.panelTrackId;
-      log("unlock complete for track", trackId);
-
-      // Mark decoded
-      if (trackId && !state.explored.has(trackId)) {
-        state.explored.add(trackId);
-        const nodeEl = $(`.node[data-track="${trackId}"]`);
-        if (nodeEl) nodeEl.classList.add("is-decoded");
-
-        const count = state.explored.size;
-        decodedCount.textContent = String(count);
-        html.dataset.explored = String(count);
-        updateIntegrity(count);
-      }
-
-      // Stabilise fragment
-      if (panelFragment) {
-        panelFragment.classList.remove("corrupted");
-        panelFragment.classList.add("is-stable");
-      }
-      if (panelUnlock) {
-        panelUnlock.classList.remove("is-holding");
-        panelUnlock.classList.add("is-unlocked");
-      }
-      if (panelUnlockLabel) {
-        panelUnlockLabel.textContent = "Signal Unlocked";
-      }
-
-      // Play audio
-      if (trackId) {
-        log("unlock triggered playback for track", trackId);
-        playTrack(trackId);
-      }
-
-      resetHoldVisuals();
-    }
-
-    /* ── Finale ──────────────────────────────────────── */
-    else if (holdContext === "finale") {
-      if (!state.finaleStabilised) {
-        state.finaleStabilised = true;
-
-        // Hide hold prompt
-        const holdPrompt = $("#finale-hold-prompt");
-        const reveal = $("#finale-reveal");
-        if (holdPrompt) holdPrompt.classList.remove("is-visible");
-
-        // === VISUAL PURGE — atmosphere dissolves for the first time ===
-        html.dataset.purged = "true";
-        log("finale: visual purge triggered");
-
-        // === DRONE RESOLVE — dark 42Hz transforms to warm clean tone ===
-        resolveDrone();
-
-        // === REVEAL "WE REMAIN" with warmth ===
-        setTimeout(() => {
-          if (reveal) reveal.classList.add("is-visible");
-          playCompletionSound();
-          log("finale: WE REMAIN revealed");
-        }, 600);
-
-        // === SIGNAL ORIGIN INPUT — appears after reveal settles ===
-        setTimeout(() => {
-          const oEl = $("#finale-origin");
-          const hintEl = $("#finale-origin-hint");
-          if (oEl) {
-            oEl.classList.add("is-visible");
-            // Focus the input after transition
-            setTimeout(() => {
-              const input = $("#finale-origin-input");
-              if (input) input.focus();
-            }, 400);
-          }
-          if (hintEl) hintEl.classList.add("is-visible");
-          log("finale: signal origin input ready");
-
-          // Fallback — if user doesn't transmit within 15s, show CTA anyway
-          setTimeout(() => {
-            if (finaleCta && !finaleCta.classList.contains("is-revealed")) {
-              if (oEl) { oEl.classList.add("is-transmitted"); }
-              if (hintEl) { hintEl.classList.add("is-hidden"); }
-              finaleCta.classList.add("is-revealed");
-              log("finale: CTA revealed (timeout fallback)");
-            }
-          }, 15000);
-        }, 3000);
-      }
-      resetHoldVisuals();
-    }
-
-    holdContext = null;
-  }
-
-  function cancelHold() {
-    if (holdRaf) cancelAnimationFrame(holdRaf);
-    holdRaf = null;
-    stopHoldNoise();
-    tactile.fail();
-    setHolding(false);
-    resetHoldVisuals();
-    holdContext = null;
-  }
-
-  function resetHoldVisuals() {
-    if (gateProgress) gateProgress.style.width = "0%";
-    if (gateHoldZone) gateHoldZone.classList.remove("is-holding");
-
-    if (panelUnlock && !panelUnlock.classList.contains("is-unlocked")) {
-      panelUnlock.classList.remove("is-holding");
-      if (panelUnlockFill) panelUnlockFill.style.width = "0%";
-    }
-
-    holdIndicator.classList.remove("is-visible");
-    if (holdIndicatorFill) holdIndicatorFill.style.strokeDashoffset = "169.65";
-
-    setHolding(false);
-  }
-
-  /* ── Gate Hold Zone ─────────────────────────────────────── */
-  if (gateHoldZone) {
-    gateHoldZone.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      // Init audio in user gesture context — critical for iOS
-      if (state.soundOn) {
-        unlockAudioEl();
-        initAudio();
-        if (actx && actx.state === "suspended") actx.resume();
-      }
-      startHold("gate");
-    });
-    gateHoldZone.addEventListener("pointerup", () => {
-      if (holdContext === "gate") cancelHold();
-    });
-    gateHoldZone.addEventListener("pointercancel", () => {
-      if (holdContext === "gate") cancelHold();
-    });
-    gateHoldZone.addEventListener("pointerleave", () => {
-      if (holdContext === "gate") cancelHold();
-    });
-    gateHoldZone.addEventListener("contextmenu", (e) => e.preventDefault());
-  }
-
-  /* ═══════════════════════════════════════════════════════════
-     NODES — simple TAP to open panel (no hold)
-     ═══════════════════════════════════════════════════════════ */
-  nodes.forEach((node) => {
-    node.addEventListener("click", () => {
-      const trackId = parseInt(node.dataset.track, 10);
-      openPanel(trackId);
-    });
   });
+}
 
-  /* ═══════════════════════════════════════════════════════════
-     PANEL — info display + hold-to-unlock button
-     ═══════════════════════════════════════════════════════════ */
-  function openPanel(trackId) {
-    const t = TRACKS[trackId];
-    if (!t) return;
+function completeGateHold() {
+  setGateRing(1);
+  setMachineState("sigmap");
+  startDrone();
+}
 
-    // Stop any playing preview when opening a new panel
-    stopTrack();
+function recoverActiveFragment() {
+  if (app.activeTrack === null) return;
+  if (app.recovered.has(app.activeTrack)) return;
 
-    state.panelTrackId = trackId;
+  app.recovered.add(app.activeTrack);
+  syncPanel(app.activeTrack);
+  updateProgressUI();
+  app.targetEnergy = 0.66 + countRecovered() * 0.055;
+  setText(refs.panelHoldLabel, "FRAGMENT RECOVERED / PLAYING");
+  playRecoveredClip(app.activeTrack);
 
-    panel.style.setProperty(
-      "--phase-color",
-      "var(--" + (t.color === "ghost" ? "ghost-c" : t.color) + ")"
-    );
-    panel.style.setProperty(
-      "--phase-glow",
-      "var(--" + (t.color === "ghost" ? "ghost-c" : t.color) + ")"
-    );
+  if (countRecovered() === TRACKS.length) {
+    app.pendingFinale = true;
+    setText(refs.fragment, "FINAL MESSAGE HELD");
+  }
+}
 
-    $("#panel-number").textContent = t.number;
-    $("#panel-phase").textContent = t.phase;
-    $("#panel-pct").textContent = t.pct;
-    $("#panel-title").textContent = t.title;
-    $("#panel-status").textContent = t.status;
-    $("#panel-body").textContent = t.body;
-    $("#panel-fragment").textContent = t.fragment;
+function resetFinaleSequence() {
+  app.finalePrimed = false;
+  app.finaleDecoded = false;
+  refs.finaleLineA?.classList.remove("is-visible");
+  refs.finaleLineB?.classList.remove("is-visible");
+  refs.finaleLineC?.classList.remove("is-visible");
+  refs.finaleHoldWrap?.classList.remove("is-visible");
+  refs.finaleReveal?.classList.remove("is-visible");
+  refs.finaleActions?.classList.remove("is-visible");
+  setFinaleFill(0);
+}
 
-    renderBars($("#panel-bars"), t.signal, t.color);
+function enterFinale() {
+  cancelHold();
+  stopClip();
+  restoreDrone();
+  app.activeTrack = null;
+  resetFinaleSequence();
+  setMachineState("finale");
+  updateProgressUI();
 
-    const isDecoded = state.explored.has(trackId);
+  const firstDelay = reducedMotion.matches ? 40 : 260;
+  const secondDelay = reducedMotion.matches ? 160 : 1060;
+  const thirdDelay = reducedMotion.matches ? 280 : 1840;
+  const fourthDelay = reducedMotion.matches ? 400 : 2640;
 
-    if (panelFragment) {
-      if (isDecoded) {
-        panelFragment.classList.remove("corrupted");
-        panelFragment.classList.add("is-stable");
-      } else {
-        panelFragment.classList.add("corrupted");
-        panelFragment.classList.remove("is-stable");
-      }
-    }
+  window.setTimeout(() => refs.finaleLineA?.classList.add("is-visible"), firstDelay);
+  window.setTimeout(() => refs.finaleLineB?.classList.add("is-visible"), secondDelay);
+  window.setTimeout(() => refs.finaleLineC?.classList.add("is-visible"), thirdDelay);
+  window.setTimeout(() => {
+    app.finalePrimed = true;
+    refs.finaleHoldWrap?.classList.add("is-visible");
+    setText(refs.state, "FINAL MESSAGE PARTIAL");
+  }, fourthDelay);
+}
 
-    if (panelUnlock) {
-      panelUnlock.classList.remove("is-holding");
-      if (isDecoded) {
-        panelUnlock.classList.add("is-unlocked");
-      } else {
-        panelUnlock.classList.remove("is-unlocked");
-      }
-    }
-    if (panelUnlockFill) {
-      panelUnlockFill.style.width = isDecoded ? "100%" : "0%";
-    }
-    if (panelUnlockLabel) {
-      panelUnlockLabel.textContent = isDecoded
-        ? "Signal Unlocked"
-        : "Hold to Unlock Signal";
-    }
+function decodeFinale() {
+  app.finaleDecoded = true;
+  refs.finaleHoldWrap?.classList.remove("is-visible");
+  refs.finaleLineA?.classList.remove("is-visible");
+  refs.finaleLineB?.classList.remove("is-visible");
+  refs.finaleLineC?.classList.remove("is-visible");
+  refs.finaleReveal?.classList.add("is-visible");
+  setMachineState("finale");
+  window.setTimeout(() => {
+    if (app.finaleDecoded) refs.finaleActions?.classList.add("is-visible");
+  }, reducedMotion.matches ? 80 : 1200);
+}
 
-    // Hide fallback by default
-    hideFallback();
+function startHold(context) {
+  if (app.holding) return;
+  if (context === "gate" && app.state !== "gate") return;
+  if (context === "panel" && (app.state !== "panel" || app.activeTrack === null || app.recovered.has(app.activeTrack))) return;
+  if (context === "finale" && (app.state !== "finale" || !app.finalePrimed || app.finaleDecoded)) return;
 
-    // Preload audio for this track (lazy — only when panel opens)
-    preloadTrack(trackId);
+  app.holding = true;
+  app.holdContext = context;
+  app.holdStart = performance.now();
+  app.holdProgress = 0;
+  html.dataset.holding = "true";
+  body.dataset.holding = "true";
+  unlockAudio();
+  resetTactile();
+  refs.gateHold?.classList.toggle("is-holding", context === "gate");
+  refs.panelHold?.classList.toggle("is-holding", context === "panel");
+  refs.finaleHold?.classList.toggle("is-holding", context === "finale");
 
-    panel.classList.add("is-open");
-    panel.setAttribute("aria-hidden", "false");
-    state.panelOpen = true;
-    playGlitchBurst(0.3, 0.15); // light glitch on panel open
+  if (context === "gate") {
+    playGlitchBurst();
+    setText(refs.state, "CARRIER DETECTED");
+    setText(refs.coreAction, "HOLD");
+    setText(refs.coreSub, "DO NOT RELEASE");
+  }
+  if (context === "panel") {
+    prepareClip(app.activeTrack, true);
+    playGlitchBurst();
+    setText(refs.panelHoldLabel, "RECOVERING 0%");
+    setText(refs.fragment, "SIGNAL NARROWING");
+  }
+  if (context === "finale") {
+    playGlitchBurst();
+    setText(refs.state, "STABILISING");
   }
 
-  // Swipe state — declared here so closePanel can reset them
-  let swipeStartY = 0;
-  let swipeDelta = 0;
-  let swipeActive = false;
-  let swipeTracking = false;
+  app.holdRaf = requestAnimationFrame(updateHold);
+}
 
-  function closePanel() {
-    const allDecoded = state.explored.size === 6;
-    panel.classList.remove("is-open");
-    panel.setAttribute("aria-hidden", "true");
-    state.panelOpen = false;
-    state.panelTrackId = null;
-    if (holdContext === "unlock") cancelHold();
-    // Reset any in-progress swipe state
-    swipeTracking = false;
-    swipeActive = false;
+function updateHold(now) {
+  const duration = HOLD[app.holdContext] || HOLD.gate;
+  const progress = Math.min(1, (now - app.holdStart) / duration);
+  app.holdProgress = progress;
 
-    // All 6 decoded — enter finale when panel closes
-    if (allDecoded && state.currentState !== "finale") {
-      fadeOutTrack();
-      setTimeout(() => {
-        playCompletionSound();
-        setState("finale");
-      }, 600);
-    }
-  }
-
-  panelClose.addEventListener("click", closePanel);
-  $(".panel__backdrop").addEventListener("click", closePanel);
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && state.panelOpen) closePanel();
-  });
-
-  /* ═══════════════════════════════════════════════════════════
-     SWIPE TO CLOSE — bidirectional gesture to dismiss panel
-     Up = harsh disconnect, Down = controlled exit
-     ═══════════════════════════════════════════════════════════ */
-  const panelShell = $(".panel__shell");
-  const panelBackdrop = $(".panel__backdrop");
-  const SWIPE_THRESHOLD = 80;
-  const SWIPE_ACTIVATE = 12;
-  let swipeDirection = null; // "up" or "down"
-
-  panel.addEventListener("touchstart", (e) => {
-    if (!state.panelOpen) return;
-    if (e.target.closest("#panel-unlock")) return;
-    if (holdContext === "unlock") return;
-
-    swipeStartY = e.touches[0].clientY;
-    swipeTracking = true;
-    swipeActive = false;
-    swipeDelta = 0;
-    swipeDirection = null;
-  }, { passive: true });
-
-  panel.addEventListener("touchmove", (e) => {
-    if (!swipeTracking) return;
-
-    const currentY = e.touches[0].clientY;
-    const rawDelta = swipeStartY - currentY; // positive = finger moving up
-
-    // Determine direction on first significant movement
-    if (!swipeDirection && Math.abs(rawDelta) > SWIPE_ACTIVATE) {
-      if (rawDelta > 0 && panelShell.scrollTop <= 0) {
-        swipeDirection = "up";
-      } else if (rawDelta < 0) {
-        // Allow swipe down only if at scroll bottom or content not scrollable
-        const atBottom = panelShell.scrollHeight - panelShell.scrollTop - panelShell.clientHeight < 2;
-        if (atBottom) {
-          swipeDirection = "down";
-        } else {
-          swipeTracking = false;
-          return;
-        }
-      } else {
-        swipeTracking = false;
-        return;
-      }
-    }
-
-    if (!swipeDirection) return;
-
-    const absDelta = Math.abs(rawDelta);
-    if (absDelta > SWIPE_ACTIVATE) {
-      if (!swipeActive) {
-        swipeActive = true;
-        panelShell.style.transition = "none";
-        panelShell.style.willChange = "transform, opacity";
-        panelBackdrop.style.transition = "none";
-      }
-      e.preventDefault();
-
-      swipeDelta = absDelta;
-      const translateY = Math.min(absDelta * 0.6, 220);
-      const scale = Math.max(1 - absDelta * 0.0004, 0.93);
-      const shellOpacity = Math.max(1 - absDelta / 400, 0.4);
-      const backdropOpacity = Math.max(1 - absDelta / 250, 0.2);
-
-      const direction = swipeDirection === "up" ? -1 : 1;
-      panelShell.style.transform =
-        "translateY(" + (direction * translateY) + "px) scale(" + scale + ")";
-      panelShell.style.opacity = String(shellOpacity);
-      panelBackdrop.style.opacity = String(backdropOpacity);
-    }
-  }, { passive: false });
-
-  panel.addEventListener("touchend", handleSwipeEnd);
-  panel.addEventListener("touchcancel", handleSwipeEnd);
-
-  function handleSwipeEnd() {
-    if (!swipeActive) {
-      swipeTracking = false;
-      swipeDirection = null;
-      return;
-    }
-
-    if (swipeDelta >= SWIPE_THRESHOLD) {
-      const dir = swipeDirection;
-      const exitY = dir === "up" ? "-120%" : "120%";
-
-      // Swipe up = harsh disconnect FX
-      if (dir === "up") {
-        playSignalCollapse();
-        tactile.fail();
-      } else {
-        // Swipe down = controlled exit
-        tactile.pulse(0.4);
-      }
-
-      panelShell.style.transition =
-        "transform 0.22s ease-out, opacity 0.22s ease-out";
-      panelShell.style.transform = "translateY(" + exitY + ") scale(0.92)";
-      panelShell.style.opacity = "0";
-      panelBackdrop.style.transition = "opacity 0.22s ease-out";
-      panelBackdrop.style.opacity = "0";
-
-      setTimeout(() => {
-        closePanel();
-        clearSwipeStyles();
-      }, 230);
+  if (app.holdContext === "gate") {
+    updateHoldTactile(progress);
+    setGateRing(progress);
+    app.targetEnergy = 0.18 + progress * 0.62;
+    if (progress < 0.25) {
+      setText(refs.state, "SIGNAL LOST");
+      setText(refs.carrier, "CARRIER: SEARCHING");
+    } else if (progress < 0.55) {
+      setText(refs.state, "CARRIER DETECTED");
+      setText(refs.carrier, "CARRIER: FAINT");
+    } else if (progress < 0.88) {
+      setText(refs.state, "LOCKING");
+      setText(refs.carrier, "CARRIER: FORMING");
     } else {
-      // Snap back
-      panelShell.style.transition =
-        "transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease";
-      panelShell.style.transform = "";
-      panelShell.style.opacity = "";
-      panelBackdrop.style.transition = "opacity 0.3s ease";
-      panelBackdrop.style.opacity = "";
-
-      setTimeout(clearSwipeStyles, 350);
+      setText(refs.state, "SIGNAL ACTIVE");
+      setText(refs.carrier, "CARRIER: FOUND");
     }
-
-    swipeTracking = false;
-    swipeActive = false;
-    swipeDelta = 0;
-    swipeDirection = null;
   }
 
-  function clearSwipeStyles() {
-    if (!panelShell || !panelBackdrop) return;
-    panelShell.style.transition = "";
-    panelShell.style.transform = "";
-    panelShell.style.opacity = "";
-    panelShell.style.willChange = "";
-    panelBackdrop.style.transition = "";
-    panelBackdrop.style.opacity = "";
-  }
-
-  /* ── Panel Unlock Button — hold interaction ─────────────── */
-  if (panelUnlock) {
-    panelUnlock.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      if (panelUnlock.classList.contains("is-unlocked")) return;
-
-      // Ensure audio is unlocked in this user gesture
-      unlockAudioEl();
-      if (state.soundOn) {
-        initAudio();
-        if (actx && actx.state === "suspended") actx.resume();
-      }
-
-      // Pre-set src and seek NOW in user gesture context so play() works later
-      if (state.soundOn && state.panelTrackId) {
-        const t = TRACKS[state.panelTrackId];
-        if (t) {
-          if (audioEl.dataset.track !== String(state.panelTrackId)) {
-            audioEl.src = t.audio.src;
-            audioEl.dataset.track = String(state.panelTrackId);
-          }
-          audioEl.currentTime = t.audio.start;
-          audioEl.volume = 0;
-          // Start playing muted immediately — in user gesture context
-          audioEl.play().catch(() => {});
-          log("early play() in user gesture: track", state.panelTrackId);
-        }
-      }
-
-      startHold("unlock");
-    });
-    panelUnlock.addEventListener("pointerup", () => {
-      if (holdContext === "unlock") {
-        // If hold wasn't completed, pause the early-started audio
-        if (!panelUnlock.classList.contains("is-unlocked")) {
-          audioEl.pause();
-          audioEl.volume = 0;
-        }
-        cancelHold();
-      }
-    });
-    panelUnlock.addEventListener("pointercancel", () => {
-      if (holdContext === "unlock") {
-        audioEl.pause();
-        audioEl.volume = 0;
-        cancelHold();
-      }
-    });
-    panelUnlock.addEventListener("pointerleave", () => {
-      if (holdContext === "unlock") {
-        audioEl.pause();
-        audioEl.volume = 0;
-        cancelHold();
-      }
-    });
-    panelUnlock.addEventListener("contextmenu", (e) => e.preventDefault());
-  }
-
-  /**
-   * Show fallback link if audio fails.
-   */
-  function showFallback(trackId) {
-    const t = TRACKS[trackId];
-    if (!t || !panelFallback || !panelFallbackLink) return;
-    // Link to the SoundCloud EP
-    panelFallbackLink.href = "https://soundcloud.com/officialulix/sets/dead-frequencies-ep";
-    panelFallback.removeAttribute("hidden");
-    log("fallback shown for track", trackId);
-  }
-
-  function hideFallback() {
-    if (panelFallback) panelFallback.setAttribute("hidden", "");
-  }
-
-  /* ── Signal bar renderer ────────────────────────────────── */
-  function renderBars(container, filled, color) {
-    const total = 8;
-    const colorVar =
-      color === "ghost" ? "var(--ghost-c)" : "var(--" + color + ")";
-    let out = "";
-    for (let i = 0; i < total; i++) {
-      const on = i < filled;
-      out +=
-        '<span style="display:inline-block;width:3px;height:' +
-        (3 + i * 1.1) +
-        "px;border-radius:1px;margin-right:1px;background:" +
-        (on ? colorVar : "var(--line)") +
-        ";opacity:" +
-        (on ? 0.7 : 0.25) +
-        ';vertical-align:bottom;"></span>';
+  if (app.holdContext === "panel") {
+    updateHoldTactile(progress);
+    setPanelFill(progress);
+    app.targetEnergy = 0.55 + progress * 0.36;
+    setText(refs.panelHoldLabel, `RECOVERING ${Math.round(progress * 100)}%`);
+    if (app.activeTrack !== null) {
+      setText(refs.panelFragment, terminalGlitch(TRACKS[app.activeTrack].fragment, progress));
+      refs.panelFragment?.classList.add("is-glitching");
     }
-    container.innerHTML = out;
   }
 
-  /* ── Signal integrity meter ─────────────────────────────── */
-  function updateIntegrity(explored) {
-    const map = {
-      0: { pct: 100, color: "var(--cold)" },
-      1: { pct: 78, color: "var(--cold)" },
-      2: { pct: 54, color: "var(--warm)" },
-      3: { pct: 32, color: "var(--ghost-c)" },
-      4: { pct: 8, color: "var(--critical)" },
-      5: { pct: 42, color: "var(--ember)" },
-      6: { pct: 100, color: "var(--resolve)" },
-    };
-    const info = map[explored] || map[0];
-    if (integrityFill) {
-      integrityFill.style.width = info.pct + "%";
-      integrityFill.style.backgroundColor = info.color;
-    }
-    if (integrityPct) integrityPct.textContent = info.pct + "%";
+  if (app.holdContext === "finale") {
+    updateHoldTactile(progress);
+    setFinaleFill(progress);
+    app.targetEnergy = 0.76 + progress * 0.22;
   }
 
-  /* ── Sound Toggle ───────────────────────────────────────── */
-  soundBtn.addEventListener("click", () => {
-    state.soundOn = !state.soundOn;
-    soundBtn.setAttribute("data-active", String(state.soundOn));
-    if (!state.soundOn) {
-      stopTrack();
-      stopDrone();
-    } else if (state.currentState === "sigmap" && !state.activeTrack) {
-      startDrone();
+  if (progress >= 1) {
+    finishHold();
+    return;
+  }
+  app.holdRaf = requestAnimationFrame(updateHold);
+}
+
+function finishHold() {
+  const context = app.holdContext;
+  cancelAnimationFrame(app.holdRaf);
+  app.holdRaf = 0;
+  app.holding = false;
+  app.holdContext = null;
+  html.dataset.holding = "false";
+  body.dataset.holding = "false";
+  refs.gateHold?.classList.remove("is-holding");
+  refs.panelHold?.classList.remove("is-holding");
+  refs.finaleHold?.classList.remove("is-holding");
+  refs.panelFragment?.classList.remove("is-glitching");
+  resetTactile();
+  playLockSound();
+
+  if (context === "gate") completeGateHold();
+  if (context === "panel") recoverActiveFragment();
+  if (context === "finale") decodeFinale();
+}
+
+function cancelHold() {
+  if (!app.holding) return;
+  const context = app.holdContext;
+  cancelAnimationFrame(app.holdRaf);
+  app.holdRaf = 0;
+  app.holding = false;
+  app.holdContext = null;
+  html.dataset.holding = "false";
+  body.dataset.holding = "false";
+  refs.gateHold?.classList.remove("is-holding");
+  refs.panelHold?.classList.remove("is-holding");
+  refs.finaleHold?.classList.remove("is-holding");
+  refs.panelFragment?.classList.remove("is-glitching");
+  resetTactile();
+
+  if (context === "gate") {
+    setGateRing(0);
+    setMachineState("gate");
+  }
+  if (context === "panel") {
+    stopClip();
+    setPanelFill(0);
+    syncPanel(app.activeTrack);
+    setMachineState("panel");
+  }
+  if (context === "finale") {
+    setFinaleFill(0);
+    setText(refs.state, "RESIDUAL FREQUENCY DETECTED");
+  }
+}
+
+function bindHold(target, context) {
+  if (!target) return;
+
+  target.addEventListener("pointerdown", (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+    target.setPointerCapture?.(event.pointerId);
+    startHold(context);
+  });
+  target.addEventListener("pointerup", (event) => {
+    target.releasePointerCapture?.(event.pointerId);
+    cancelHold();
+  });
+  target.addEventListener("pointercancel", cancelHold);
+  target.addEventListener("lostpointercapture", cancelHold);
+  target.addEventListener("contextmenu", (event) => event.preventDefault());
+  target.addEventListener("keydown", (event) => {
+    if (event.repeat) return;
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      startHold(context);
     }
   });
+  target.addEventListener("keyup", (event) => {
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      cancelHold();
+    }
+  });
+}
 
-  /* ── Finale Hold-to-Stabilise ───────────────────────────── */
-  finaleEl.addEventListener("pointerdown", (e) => {
-    if (e.button !== 0) return;
-    if (state.currentState !== "finale" || state.finaleStabilised) return;
-    if (!state.finaleReady) return;
-    startHold("finale");
-  });
-  finaleEl.addEventListener("pointerup", () => {
-    if (holdContext === "finale") cancelHold();
-  });
-  finaleEl.addEventListener("pointercancel", () => {
-    if (holdContext === "finale") cancelHold();
-  });
-  finaleEl.addEventListener("contextmenu", (e) => {
-    if (state.currentState === "finale" && !state.finaleStabilised)
-      e.preventDefault();
-  });
+function replaySignal() {
+  stopClip();
+  stopDrone();
+  app.activeTrack = null;
+  app.recovered.clear();
+  app.audioTrack = null;
+  app.pendingFinale = false;
+  app.targetEnergy = 0.12;
+  resetFinaleSequence();
+  setGateRing(0);
+  setPanelFill(0);
+  setMachineState("gate");
+}
 
-  /* ── Revisit ────────────────────────────────────────────── */
-  if (revisitBtn) {
-    revisitBtn.addEventListener("click", () => {
-      // Reset purge state for re-entry
-      html.dataset.purged = "false";
-      state.finaleStabilised = false;
-      state.finaleReady = false;
-      // Reset finale UI
-      const phases = $$("#finale .finale__phase");
-      phases.forEach((p) => p.classList.remove("is-visible"));
-      if (originEl) { originEl.classList.remove("is-visible", "is-transmitted"); }
-      if (originHint) { originHint.classList.remove("is-visible", "is-hidden"); }
-      if (originEcho) { originEcho.innerHTML = ""; }
-      if (originInput) { originInput.textContent = ""; }
-      if (finaleCta) { finaleCta.classList.remove("is-revealed"); }
-      setState("sigmap");
-    });
+function viewTransmissions() {
+  cancelHold();
+  stopClip();
+  restoreDrone();
+  app.finaleDecoded = false;
+  app.pendingFinale = false;
+  refs.finaleReveal?.classList.remove("is-visible");
+  refs.finaleHoldWrap?.classList.remove("is-visible");
+  setMachineState("sigmap");
+}
+
+function resizeCanvas() {
+  if (!canvas || !ctx) return;
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.7);
+  const width = Math.max(1, Math.floor(rect.width * dpr));
+  const height = Math.max(1, Math.floor(rect.height * dpr));
+
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+}
+
+function drawNoise(width, height, time) {
+  const count = reducedMotion.matches ? 90 : 360;
+  const countFactor = 1 - countRecovered() * 0.09;
+
+  ctx.save();
+  ctx.globalAlpha = Math.max(0.04, (app.state === "gate" ? 0.22 : 0.14) * countFactor);
+  ctx.fillStyle = "#f1ead8";
+  for (let i = 0; i < count; i += 1) {
+    const sx = Math.sin(i * 129.17 + time * 0.002) * 43758.5453;
+    const sy = Math.sin(i * 97.73 + time * 0.003) * 24634.6345;
+    ctx.fillRect((sx - Math.floor(sx)) * width, (sy - Math.floor(sy)) * height, i % 19 === 0 ? 2 : 1, 1);
+  }
+  ctx.restore();
+}
+
+function drawRadial(width, height, time) {
+  const cx = width * 0.5;
+  const cy = height * 0.5;
+  const base = Math.min(width, height) * 0.17;
+  const count = countRecovered();
+  const lock = app.state === "gate" ? 0.12 : 0.48 + count * 0.07;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(reducedMotion.matches ? -0.12 : -0.12 + time * 0.00008);
+
+  for (let i = 0; i < 7; i += 1) {
+    ctx.beginPath();
+    ctx.arc(0, 0, base * (0.76 + i * 0.23), 0, Math.PI * 2);
+    ctx.strokeStyle = i % 2 === 0
+      ? `rgba(236, 222, 190, ${0.05 + lock * 0.08})`
+      : `rgba(197, 56, 43, ${0.08 + lock * 0.11})`;
+    ctx.lineWidth = Math.max(1, width * 0.001);
+    ctx.setLineDash(i > 2 ? [Math.max(8, width * 0.008), Math.max(10, width * 0.011)] : []);
+    ctx.stroke();
   }
 
-  /* ═══════════════════════════════════════════════════════════
-     SIGNAL ORIGIN — type name → enter → dissolve into particles → CTA
-     ═══════════════════════════════════════════════════════════ */
-  const originInput = $("#finale-origin-input");
-  const originEl = $("#finale-origin");
-  const originHint = $("#finale-origin-hint");
-  const originEcho = $("#finale-origin-echo");
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(-base * 2.1, 0);
+  ctx.lineTo(base * 2.1, 0);
+  ctx.strokeStyle = `rgba(211, 154, 72, ${0.14 + app.energy * 0.18})`;
+  ctx.stroke();
+  ctx.restore();
+}
 
-  if (originInput) {
-    // Prevent newlines in contenteditable
-    originInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        transmitOrigin();
-      }
-    });
+function drawWave(width, height, time) {
+  const yBase = height * 0.515;
+  const count = countRecovered();
+  const resolved = app.state === "finale" && app.finaleDecoded;
+  const amp = height * (resolved ? 0.028 : 0.02 + app.energy * 0.065);
+  const broken = resolved ? 0.05 : 1 - count / 8;
+  const trackOffset = (app.activeTrack ?? 0) * 0.74;
 
-    // Limit input length
-    originInput.addEventListener("input", () => {
-      const text = originInput.textContent || "";
-      if (text.length > 20) {
-        originInput.textContent = text.slice(0, 20);
-        // Move cursor to end
-        const range = document.createRange();
-        const sel = window.getSelection();
-        range.selectNodeContents(originInput);
-        range.collapse(false);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-    });
-  }
+  for (let line = 0; line < 3; line += 1) {
+    ctx.beginPath();
+    for (let x = 0; x <= width; x += 5) {
+      const envelope = Math.sin((x / width) * Math.PI);
+      const dropout = app.state === "gate" && x % 55 < 12 ? broken * 18 : 0;
+      const y = yBase + line * height * 0.034 + (
+        Math.sin(x * (0.017 + count * 0.0007) + time * 0.002 + trackOffset) +
+        Math.sin(x * 0.047 - time * 0.0011 + line * 1.4) * broken
+      ) * amp * envelope + dropout;
 
-  function transmitOrigin() {
-    if (!originInput || !originEl) return;
-    const name = (originInput.textContent || "").trim();
-    if (!name) return;
-
-    log("finale: transmitting origin —", name);
-
-    // Hide hint
-    if (originHint) originHint.classList.add("is-hidden");
-
-    // Build echo characters with random dissolve directions
-    if (originEcho) {
-      let html = "";
-      for (let i = 0; i < name.length; i++) {
-        const ch = name[i] === " " ? "&nbsp;" : name[i];
-        const dx = (Math.random() - 0.5) * 40;
-        const dy = -(Math.random() * 20 + 10);
-        const delay = i * 0.06 + Math.random() * 0.1;
-        html += '<span class="echo-char" style="--dx:' + dx.toFixed(1) + 'px;--dy:' + dy.toFixed(1) + 'px;--d:' + delay.toFixed(2) + 's">' + ch + "</span>";
-      }
-      originEcho.innerHTML = html;
+      if (x === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
     }
 
-    // Tactile feedback
-    tactile.lock();
-    playGlitchBurst(0.2, 0.1);
+    ctx.strokeStyle = line === 0
+      ? `rgba(197, 56, 43, ${0.46 + app.energy * 0.32})`
+      : `rgba(236, 222, 190, ${0.08 + app.energy * 0.15})`;
+    ctx.lineWidth = line === 0 ? 2 : 1;
+    ctx.stroke();
+  }
+}
 
-    // Fade out the input line
-    originEl.classList.add("is-transmitted");
+function drawSpectrum(width, height, time) {
+  const bars = 48;
+  const start = width * 0.18;
+  const end = width * 0.82;
+  const bottom = height * 0.79;
+  const maxHeight = height * (0.04 + countRecovered() * 0.008);
+  const active = app.activeTrack ?? 0;
 
-    // After particles dissolve, show CTA
-    setTimeout(() => {
-      if (finaleCta) finaleCta.classList.add("is-revealed");
-      log("finale: CTA revealed");
-    }, 2800);
+  for (let i = 0; i < bars; i += 1) {
+    const phase = i * 1.37 + active * 0.8 + time * 0.002;
+    const value = Math.sin(phase) * 0.5 + 0.5;
+    const x = start + ((end - start) * i) / (bars - 1);
+    const h = 5 + value * maxHeight * (0.36 + app.energy);
+    ctx.fillStyle = i % 6 === active
+      ? "rgba(197, 56, 43, 0.55)"
+      : "rgba(236, 222, 190, 0.13)";
+    ctx.fillRect(x, bottom - h, Math.max(1, width * 0.0024), h);
+  }
+}
+
+function render(time = 0) {
+  if (!ctx || !canvas) return;
+
+  if (reducedMotion.matches && time - lastFrame < 420) {
+    raf = requestAnimationFrame(render);
+    return;
   }
 
-  /* ── Init ───────────────────────────────────────────────── */
-  log("Dead Frequencies engine starting");
-  setState("gate");
-  runBoot();
-})();
+  lastFrame = time;
+  resizeCanvas();
+  app.energy += (app.targetEnergy - app.energy) * 0.045;
+
+  const width = canvas.width;
+  const height = canvas.height;
+  const count = countRecovered();
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#070706";
+  ctx.fillRect(0, 0, width, height);
+
+  const glow = ctx.createRadialGradient(width * 0.5, height * 0.5, height * 0.04, width * 0.5, height * 0.5, height * 0.55);
+  glow.addColorStop(0, `rgba(197, 56, 43, ${0.08 + app.energy * 0.18})`);
+  glow.addColorStop(0.42, `rgba(211, 154, 72, ${0.03 + count * 0.01})`);
+  glow.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, width, height);
+
+  drawRadial(width, height, time);
+  drawWave(width, height, time);
+  drawSpectrum(width, height, time);
+  drawNoise(width, height, time);
+
+  raf = requestAnimationFrame(render);
+}
+
+bindHold(refs.gateHold, "gate");
+bindHold(refs.panelHold, "panel");
+bindHold(refs.finaleHold, "finale");
+
+refs.nodes.forEach((node) => {
+  node.addEventListener("click", () => openPanel(Number(node.dataset.track)));
+});
+
+refs.panelClose?.addEventListener("click", closePanel);
+refs.replay?.addEventListener("click", replaySignal);
+refs.view?.addEventListener("click", viewTransmissions);
+
+window.addEventListener("resize", resizeCanvas);
+window.addEventListener("pagehide", () => {
+  cancelAnimationFrame(raf);
+  cancelAnimationFrame(app.holdRaf);
+  stopClip();
+});
+
+$$('a[href="' + SOUNDCLOUD_URL + '"]').forEach((link) => {
+  link.rel = "noreferrer";
+});
+
+setGateRing(0);
+setPanelFill(0);
+setFinaleFill(0);
+body.dataset.holding = "false";
+setMachineState("gate");
+resizeCanvas();
+raf = requestAnimationFrame(render);
