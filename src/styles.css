@@ -37,11 +37,14 @@ button,
 a {
   font: inherit;
   color: inherit;
-  -webkit-tap-highlight-color: transparent;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
 button {
   border: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  -webkit-touch-callout: none;
 }
 
 a {
@@ -326,6 +329,7 @@ a {
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
   transition: transform 520ms var(--ease), filter 520ms var(--ease);
 }
 
@@ -354,6 +358,19 @@ a {
 .listen-link:focus-visible {
   outline: 2px solid rgba(211, 154, 72, 0.85);
   outline-offset: 4px;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .core-node:focus,
+  .core-node:focus-visible,
+  .node:focus,
+  .node:focus-visible,
+  .recover-hold:focus,
+  .recover-hold:focus-visible,
+  .finale-hold-button:focus,
+  .finale-hold-button:focus-visible {
+    outline: 0;
+  }
 }
 
 .core-node__ring {
@@ -669,6 +686,9 @@ a {
   cursor: pointer;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
 .recover-hold__fill {
@@ -683,6 +703,15 @@ a {
 .mini-action {
   position: relative;
   z-index: 1;
+}
+
+.core-node *,
+.recover-hold *,
+.finale-hold-button * {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .recover-hold.is-recovered {
@@ -750,6 +779,10 @@ a {
   text-transform: uppercase;
   cursor: pointer;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
 .finale-hold-button__fill {
