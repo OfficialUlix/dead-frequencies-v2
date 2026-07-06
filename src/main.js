@@ -101,11 +101,11 @@ const refs = {
   listen: $(".listen-link"),
   finaleLineA: $("#finale-line-a"),
   finaleLineB: $("#finale-line-b"),
-  finaleLineC: $("#finale-line-c"),
   finaleHoldWrap: $("#finale-hold-wrap"),
   finaleHold: $("#finale-hold"),
   finaleProgress: $("#finale-progress"),
   finaleReveal: $("#finale-reveal"),
+  finaleTitle: $("#finale-title"),
   finaleActions: $("#finale-actions"),
   replay: $("#replay-button"),
   view: $("#view-button"),
@@ -200,6 +200,48 @@ function terminalGlitch(text, progress) {
       return shouldReveal ? char : index % 3 === 0 ? "_" : char;
     })
     .join("");
+}
+
+function resolveTerminalText(node, text, duration = 900, onDone) {
+  if (!node) {
+    if (onDone) onDone();
+    return;
+  }
+
+  if (reducedMotion.matches) {
+    setText(node, text);
+    if (onDone) onDone();
+    return;
+  }
+
+  const start = performance.now();
+
+  function frame(now) {
+    const progress = Math.min(1, (now - start) / duration);
+    setText(node, terminalGlitch(text, progress));
+    if (progress < 1) {
+      requestAnimationFrame(frame);
+      return;
+    }
+    setText(node, text);
+    if (onDone) onDone();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+function revealFinaleLine(node, text, delay, duration, onDone) {
+  window.setTimeout(() => {
+    if (!node) {
+      if (onDone) onDone();
+      return;
+    }
+    node.classList.add("is-visible", "is-glitching");
+    resolveTerminalText(node, text, duration, () => {
+      node.classList.remove("is-glitching");
+      if (onDone) onDone();
+    });
+  }, delay);
 }
 
 function ensureAudio() {
@@ -727,10 +769,12 @@ function resetFinaleSequence() {
   app.finaleDecoded = false;
   refs.finaleLineA?.classList.remove("is-visible");
   refs.finaleLineB?.classList.remove("is-visible");
-  refs.finaleLineC?.classList.remove("is-visible");
   refs.finaleHoldWrap?.classList.remove("is-visible");
   refs.finaleReveal?.classList.remove("is-visible");
   refs.finaleActions?.classList.remove("is-visible");
+  setText(refs.finaleLineA, "ALL SIGNALS DECODED");
+  setText(refs.finaleLineB, "RESIDUAL FREQUENCY DETECTED");
+  setText(refs.finaleTitle, "WE REMAIN");
   setFinaleFill(0);
 }
 
@@ -744,18 +788,16 @@ function enterFinale() {
   updateProgressUI();
 
   const firstDelay = reducedMotion.matches ? 40 : 260;
-  const secondDelay = reducedMotion.matches ? 160 : 1060;
-  const thirdDelay = reducedMotion.matches ? 280 : 1840;
-  const fourthDelay = reducedMotion.matches ? 400 : 2640;
+  const secondDelay = reducedMotion.matches ? 160 : 1180;
+  const holdDelay = reducedMotion.matches ? 320 : 2340;
 
-  window.setTimeout(() => refs.finaleLineA?.classList.add("is-visible"), firstDelay);
-  window.setTimeout(() => refs.finaleLineB?.classList.add("is-visible"), secondDelay);
-  window.setTimeout(() => refs.finaleLineC?.classList.add("is-visible"), thirdDelay);
+  revealFinaleLine(refs.finaleLineA, "ALL SIGNALS DECODED", firstDelay, 860);
+  revealFinaleLine(refs.finaleLineB, "RESIDUAL FREQUENCY DETECTED", secondDelay, 980);
   window.setTimeout(() => {
     app.finalePrimed = true;
     refs.finaleHoldWrap?.classList.add("is-visible");
-    setText(refs.state, "FINAL MESSAGE PARTIAL");
-  }, fourthDelay);
+    setText(refs.state, "HOLD TO STABILISE");
+  }, holdDelay);
 }
 
 function decodeFinale() {
@@ -763,9 +805,10 @@ function decodeFinale() {
   refs.finaleHoldWrap?.classList.remove("is-visible");
   refs.finaleLineA?.classList.remove("is-visible");
   refs.finaleLineB?.classList.remove("is-visible");
-  refs.finaleLineC?.classList.remove("is-visible");
   refs.finaleReveal?.classList.add("is-visible");
+  setText(refs.finaleTitle, "");
   setMachineState("finale");
+  resolveTerminalText(refs.finaleTitle, "WE REMAIN", reducedMotion.matches ? 0 : 1250);
   window.setTimeout(() => {
     if (app.finaleDecoded) refs.finaleActions?.classList.add("is-visible");
   }, reducedMotion.matches ? 80 : 1200);

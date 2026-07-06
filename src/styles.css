@@ -18,6 +18,7 @@
 
 * {
   box-sizing: border-box;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
 }
 
 html,
@@ -31,6 +32,7 @@ body {
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  -webkit-touch-callout: none;
 }
 
 button,
@@ -361,15 +363,22 @@ a {
 }
 
 @media (hover: none), (pointer: coarse) {
-  .core-node:focus,
-  .core-node:focus-visible,
-  .node:focus,
-  .node:focus-visible,
-  .recover-hold:focus,
-  .recover-hold:focus-visible,
-  .finale-hold-button:focus,
-  .finale-hold-button:focus-visible {
-    outline: 0;
+  *,
+  *::before,
+  *::after {
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0) !important;
+    -webkit-touch-callout: none !important;
+  }
+
+  *:focus,
+  *:focus-visible,
+  *:active {
+    outline: 0 !important;
+    box-shadow: none;
+  }
+
+  ::selection {
+    background: transparent;
   }
 }
 
@@ -757,6 +766,13 @@ a {
   color: var(--muted);
   font-size: clamp(18px, 3vw, 28px);
   letter-spacing: 0.22em;
+}
+
+.finale__line.is-glitching {
+  color: var(--ink);
+  text-shadow:
+    1px 0 rgba(210, 75, 50, 0.28),
+    -1px 0 rgba(211, 154, 72, 0.18);
 }
 
 .finale__line + .finale__line {
