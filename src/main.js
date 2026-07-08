@@ -784,6 +784,9 @@ function runPreboot() {
     return;
   }
 
+  const lineDelay = 410;
+  const firstDelay = 220;
+
   refs.bootLines.forEach((line, index) => {
     const text = bootText[index] || "";
     queueBootStep(() => {
@@ -791,10 +794,10 @@ function runPreboot() {
       setText(line, terminalGlitch(text, 0));
       resolveTerminalText(line, text, index === refs.bootLines.length - 1 ? 620 : 480, null, { force: true });
       if (index === 3 || index === 6) playGlitchBurst();
-    }, 220 + index * 410);
+    }, firstDelay + index * lineDelay);
   });
 
-  queueBootStep(completePreboot, 4550);
+  queueBootStep(completePreboot, firstDelay + refs.bootLines.length * lineDelay + 760);
 }
 
 function completePreboot() {
@@ -811,6 +814,11 @@ function completePreboot() {
 function completeGateHold() {
   setGateRing(1);
   refs.boot?.setAttribute("aria-hidden", "true");
+  const player = ensureAudio();
+  player.muted = false;
+  player.volume = 1;
+  resumeAudioContext();
+  audioUnlocked = true;
   playGlitchBurst();
   setMachineState("sigmap");
   startDrone();

@@ -629,7 +629,8 @@ a {
   animation: prebootTear 5.4s steps(1, end) infinite;
 }
 
-.preboot__line {
+.preboot__line,
+.preboot__audio-note {
   position: relative;
   z-index: 1;
   margin: 0;
@@ -652,13 +653,15 @@ a {
   color: var(--faint);
 }
 
-.preboot__line.is-visible {
+.preboot__line.is-visible,
+.preboot__audio-note.is-visible {
   opacity: 1;
   transform: translate3d(0, 0, 0);
   transition: opacity 520ms var(--ease), transform 520ms var(--ease);
 }
 
-.preboot__line.is-glitching {
+.preboot__line.is-glitching,
+.preboot__audio-note.is-glitching {
   color: var(--ink);
   text-shadow:
     2px 0 rgba(212, 72, 47, 0.42),
@@ -668,6 +671,13 @@ a {
 .preboot__line--final {
   margin-top: 18px;
   color: var(--ink);
+}
+
+.preboot__audio-note {
+  margin-top: 8px;
+  color: rgba(212, 72, 47, 0.76);
+  font-size: clamp(10px, 1.7vw, 12px);
+  letter-spacing: 0.18em;
 }
 
 .preboot__gap {
