@@ -1079,6 +1079,15 @@ function cancelHold() {
   }
 }
 
+function contextForHoldTarget(target) {
+  if (!target) return null;
+  if (target === refs.prebootHold) return "preboot";
+  if (target === refs.gateHold) return "gate";
+  if (target === refs.panelHold) return "panel";
+  if (target === refs.finaleHold) return "finale";
+  return null;
+}
+
 function bindHold(target, context) {
   if (!target) return;
   let pointerId = null;
@@ -1138,21 +1147,40 @@ function bindHold(target, context) {
 function suppressTouchHighlight() {
   const interactive = "button, a, .node, .preboot-hold, .core-node, .recover-hold, .finale-hold-button, .panel__close, .finale-action";
   const holdControl = ".preboot-hold, .core-node, .recover-hold, .finale-hold-button";
+  let activeTouchHold = null;
 
   document.addEventListener("touchstart", (event) => {
     const target = event.target.closest(interactive);
     if (!target) return;
-    target.blur?.();
-    if (target.matches(holdControl)) {
+    const holdTarget = event.target.closest(holdControl);
+    if (holdTarget) {
+      const context = contextForHoldTarget(holdTarget);
+      if (!context) return;
       event.preventDefault();
+      activeTouchHold = holdTarget;
+      startHold(context);
+      return;
     }
+    target.blur?.();
   }, { passive: false, capture: true });
 
   document.addEventListener("touchend", (event) => {
     const target = event.target.closest(interactive);
-    if (!target) return;
-    target.blur?.();
-  }, { passive: true, capture: true });
+    if (activeTouchHold) {
+      event.preventDefault();
+      activeTouchHold = null;
+      cancelHold();
+      return;
+    }
+    target?.blur?.();
+  }, { passive: false, capture: true });
+
+  document.addEventListener("touchcancel", (event) => {
+    if (!activeTouchHold) return;
+    event.preventDefault();
+    activeTouchHold = null;
+    cancelHold();
+  }, { passive: false, capture: true });
 }
 
 function replaySignal() {
