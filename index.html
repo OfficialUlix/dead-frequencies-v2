@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-state="gate" data-explored="0" data-holding="false">
+<html lang="en" data-state="gate" data-boot="loading" data-explored="0" data-holding="false">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -8,7 +8,7 @@
       name="description"
       content="ULIX - Dead Frequencies. Recover six damaged transmissions inside the DF-06 signal node."
     />
-    <meta name="theme-color" content="#080806" />
+    <meta name="theme-color" content="#030302" />
     <meta property="og:title" content="ULIX - Dead Frequencies" />
     <meta property="og:description" content="Recover the signal. Six transmissions. One message left alive." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23080806'/%3E%3Cpath d='M5 18h4l2-6 4 14 3-20 3 12h6' fill='none' stroke='%23d24b32' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
@@ -109,6 +109,26 @@
         </div>
 
         <p class="gate-instruction" id="gate-instruction">HOLD TO RECOVER SIGNAL</p>
+
+        <section class="boot-sequence" id="boot-sequence" aria-hidden="true" aria-live="polite">
+          <div class="boot-sequence__noise" aria-hidden="true"></div>
+          <div class="boot-sequence__inner">
+            <span class="boot-sequence__eyebrow">LOADING TRANSMISSION</span>
+            <p class="boot-sequence__line" data-boot-line>TRANSMISSION LOADING</p>
+            <p class="boot-sequence__line" data-boot-line>SIGNAL SOURCE: DF-06</p>
+            <p class="boot-sequence__line" data-boot-line>BAND RESPONSE: 6 SIGNALS LOCKED</p>
+            <p class="boot-sequence__line" data-boot-line>PACKET LOSS: 38% / FRAMES CORRUPTED</p>
+            <p class="boot-sequence__line boot-sequence__line--ready" data-boot-line>MANUAL UNLOCK REQUIRED</p>
+            <div class="boot-sequence__meter" aria-hidden="true">
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          </div>
+        </section>
       </section>
 
       <section class="panel" id="panel" aria-hidden="true" aria-label="Transmission fragment panel">

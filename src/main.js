@@ -99,6 +99,8 @@ const refs = {
   panelProgress: $("#panel-progress"),
   panelHoldLabel: $("#panel-hold-label"),
   listen: $(".listen-link"),
+  boot: $("#boot-sequence"),
+  bootLines: $$("[data-boot-line]"),
   finaleLineA: $("#finale-line-a"),
   finaleLineB: $("#finale-line-b"),
   finaleHoldWrap: $("#finale-hold-wrap"),
@@ -126,7 +128,11 @@ const app = {
   pendingFinale: false,
   finalePrimed: false,
   finaleDecoded: false,
+  bootReady: false,
+  bootTimers: [],
 };
+
+const bootText = refs.bootLines.map((line) => line.textContent);
 
 let audio = null;
 let audioContext = null;
@@ -620,8 +626,8 @@ function updateProgressUI() {
     );
   });
 
-  if (app.state !== "panel" && app.state !== "finale") {
-    setText(refs.fragment, count === 6 ? "FINAL MESSAGE READY" : "FRAGMENTS LOCKED");
+  if (app.state === "sigmap") {
+    setText(refs.fragment, count === 6 ? "FINAL MESSAGE READY" : "SELECT FREQUENCY");
   }
 }
 
@@ -644,19 +650,21 @@ function setMachineState(next) {
   }
 
   if (next === "gate") {
-    setText(refs.state, "SIGNAL LOST");
-    setText(refs.lock, "LOCK: NONE");
-    setText(refs.carrier, "CARRIER: DEAD");
+    refs.boot?.setAttribute("aria-hidden", String(app.bootReady));
+    setText(refs.state, app.bootReady ? "SIGNAL MAP LOCKED" : "LOADING TRANSMISSION");
+    setText(refs.lock, app.bootReady ? "LOCK: MANUAL" : "LOCK: SEEKING");
+    setText(refs.carrier, app.bootReady ? "CARRIER: UNSTABLE" : "CARRIER: SEARCHING");
     setText(refs.frequency, "--.- MHz");
-    setText(refs.fragment, "0 OF 6 BURIED");
+    setText(refs.fragment, app.bootReady ? "HOLD TO UNLOCK" : "BOOT SEQUENCE");
     setText(refs.coreLabel, "DF-06");
-    setText(refs.coreAction, "HOLD");
-    setText(refs.coreSub, "BEGIN TRANSMISSION");
+    setText(refs.coreAction, app.bootReady ? "HOLD TO UNLOCK" : "LOADING");
+    setText(refs.coreSub, app.bootReady ? "SIGNAL MAP LOCKED" : "TRANSMISSION");
     refs.panel?.setAttribute("aria-hidden", "true");
-    app.targetEnergy = 0.12;
+    app.targetEnergy = app.bootReady ? 0.22 : 0.12;
   }
 
   if (next === "sigmap") {
+    refs.boot?.setAttribute("aria-hidden", "true");
     const count = countRecovered();
     setText(refs.state, count === 6 ? "ALL SIGNALS DECODED" : "SIGNAL ACTIVE");
     setText(refs.lock, count === 6 ? "LOCK: COMPLETE" : "LOCK: PARTIAL");
@@ -744,8 +752,70 @@ function closePanel() {
   });
 }
 
+function clearBootIntro() {
+  app.bootTimers.forEach((timer) => window.clearTimeout(timer));
+  app.bootTimers = [];
+  app.bootReady = false;
+  html.dataset.boot = "loading";
+  body.dataset.boot = "loading";
+  refs.boot?.classList.remove("is-ready");
+  refs.bootLines.forEach((line, index) => {
+    line.classList.remove("is-visible", "is-glitching");
+    setText(line, bootText[index] || "");
+  });
+  refs.boot?.setAttribute("aria-hidden", "true");
+}
+
+function queueBootStep(callback, delay) {
+  const timer = window.setTimeout(callback, delay);
+  app.bootTimers.push(timer);
+  return timer;
+}
+
+function runGateBoot() {
+  clearBootIntro();
+  refs.boot?.setAttribute("aria-hidden", "false");
+  setMachineState("gate");
+
+  if (reducedMotion.matches) {
+    refs.bootLines.forEach((line) => line.classList.add("is-visible"));
+    queueBootStep(markGateReady, 300);
+    return;
+  }
+
+  refs.bootLines.forEach((line, index) => {
+    const text = bootText[index] || "";
+    queueBootStep(() => {
+      line.classList.add("is-visible");
+      setText(line, terminalGlitch(text, 0));
+      resolveTerminalText(line, text, index === refs.bootLines.length - 1 ? 620 : 480, null, { force: true });
+      if (index === 1 || index === 3) playGlitchBurst();
+    }, 220 + index * 470);
+  });
+
+  queueBootStep(markGateReady, 3150);
+}
+
+function markGateReady() {
+  if (app.state !== "gate") return;
+  app.bootReady = true;
+  html.dataset.boot = "ready";
+  body.dataset.boot = "ready";
+  refs.boot?.classList.add("is-ready");
+  queueBootStep(() => refs.boot?.setAttribute("aria-hidden", "true"), 620);
+  setText(refs.state, "SIGNAL MAP LOCKED");
+  setText(refs.lock, "LOCK: MANUAL");
+  setText(refs.carrier, "CARRIER: UNSTABLE");
+  setText(refs.fragment, "HOLD TO UNLOCK");
+  setText(refs.coreAction, "HOLD TO UNLOCK");
+  setText(refs.coreSub, "SIGNAL MAP LOCKED");
+  app.targetEnergy = 0.3;
+}
+
 function completeGateHold() {
   setGateRing(1);
+  refs.boot?.setAttribute("aria-hidden", "true");
+  playGlitchBurst();
   setMachineState("sigmap");
   startDrone();
 }
@@ -819,7 +889,7 @@ function decodeFinale() {
 
 function startHold(context) {
   if (app.holding) return;
-  if (context === "gate" && app.state !== "gate") return;
+  if (context === "gate" && (app.state !== "gate" || !app.bootReady)) return;
   if (context === "panel" && (app.state !== "panel" || app.activeTrack === null || app.recovered.has(app.activeTrack))) return;
   if (context === "finale" && (app.state !== "finale" || !app.finalePrimed || app.finaleDecoded)) return;
 
@@ -1018,6 +1088,7 @@ function suppressTouchHighlight() {
 }
 
 function replaySignal() {
+  clearBootIntro();
   stopClip();
   stopDrone();
   app.activeTrack = null;
@@ -1028,7 +1099,7 @@ function replaySignal() {
   resetFinaleSequence();
   setGateRing(0);
   setPanelFill(0);
-  setMachineState("gate");
+  runGateBoot();
 }
 
 function viewTransmissions() {
@@ -1061,7 +1132,7 @@ function drawNoise(width, height, time) {
 
   ctx.save();
   ctx.globalAlpha = Math.max(0.04, (app.state === "gate" ? 0.22 : 0.14) * countFactor);
-  ctx.fillStyle = "#f1ead8";
+  ctx.fillStyle = "#f0e5d2";
   for (let i = 0; i < count; i += 1) {
     const sx = Math.sin(i * 129.17 + time * 0.002) * 43758.5453;
     const sy = Math.sin(i * 97.73 + time * 0.003) * 24634.6345;
@@ -1085,8 +1156,8 @@ function drawRadial(width, height, time) {
     ctx.beginPath();
     ctx.arc(0, 0, base * (0.76 + i * 0.23), 0, Math.PI * 2);
     ctx.strokeStyle = i % 2 === 0
-      ? `rgba(236, 222, 190, ${0.05 + lock * 0.08})`
-      : `rgba(197, 56, 43, ${0.08 + lock * 0.11})`;
+      ? `rgba(150, 127, 97, ${0.045 + lock * 0.075})`
+      : `rgba(212, 72, 47, ${0.075 + lock * 0.105})`;
     ctx.lineWidth = Math.max(1, width * 0.001);
     ctx.setLineDash(i > 2 ? [Math.max(8, width * 0.008), Math.max(10, width * 0.011)] : []);
     ctx.stroke();
@@ -1096,7 +1167,7 @@ function drawRadial(width, height, time) {
   ctx.beginPath();
   ctx.moveTo(-base * 2.1, 0);
   ctx.lineTo(base * 2.1, 0);
-  ctx.strokeStyle = `rgba(211, 154, 72, ${0.14 + app.energy * 0.18})`;
+  ctx.strokeStyle = `rgba(159, 113, 69, ${0.12 + app.energy * 0.16})`;
   ctx.stroke();
   ctx.restore();
 }
@@ -1124,8 +1195,8 @@ function drawWave(width, height, time) {
     }
 
     ctx.strokeStyle = line === 0
-      ? `rgba(197, 56, 43, ${0.46 + app.energy * 0.32})`
-      : `rgba(236, 222, 190, ${0.08 + app.energy * 0.15})`;
+      ? `rgba(212, 72, 47, ${0.42 + app.energy * 0.3})`
+      : `rgba(150, 127, 97, ${0.075 + app.energy * 0.13})`;
     ctx.lineWidth = line === 0 ? 2 : 1;
     ctx.stroke();
   }
@@ -1145,8 +1216,8 @@ function drawSpectrum(width, height, time) {
     const x = start + ((end - start) * i) / (bars - 1);
     const h = 5 + value * maxHeight * (0.36 + app.energy);
     ctx.fillStyle = i % 6 === active
-      ? "rgba(197, 56, 43, 0.55)"
-      : "rgba(236, 222, 190, 0.13)";
+      ? "rgba(212, 72, 47, 0.52)"
+      : "rgba(150, 127, 97, 0.12)";
     ctx.fillRect(x, bottom - h, Math.max(1, width * 0.0024), h);
   }
 }
@@ -1168,12 +1239,12 @@ function render(time = 0) {
   const count = countRecovered();
 
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#070706";
+  ctx.fillStyle = "#030302";
   ctx.fillRect(0, 0, width, height);
 
   const glow = ctx.createRadialGradient(width * 0.5, height * 0.5, height * 0.04, width * 0.5, height * 0.5, height * 0.55);
-  glow.addColorStop(0, `rgba(197, 56, 43, ${0.08 + app.energy * 0.18})`);
-  glow.addColorStop(0.42, `rgba(211, 154, 72, ${0.03 + count * 0.01})`);
+  glow.addColorStop(0, `rgba(212, 72, 47, ${0.07 + app.energy * 0.16})`);
+  glow.addColorStop(0.42, `rgba(159, 113, 69, ${0.025 + count * 0.008})`);
   glow.addColorStop(1, "rgba(0, 0, 0, 0)");
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, width, height);
@@ -1200,6 +1271,7 @@ refs.view?.addEventListener("click", viewTransmissions);
 
 window.addEventListener("resize", resizeCanvas);
 window.addEventListener("pagehide", () => {
+  clearBootIntro();
   cancelAnimationFrame(raf);
   cancelAnimationFrame(app.holdRaf);
   stopClip();
@@ -1214,6 +1286,6 @@ setPanelFill(0);
 setFinaleFill(0);
 body.dataset.holding = "false";
 suppressTouchHighlight();
-setMachineState("gate");
+runGateBoot();
 resizeCanvas();
 raf = requestAnimationFrame(render);
