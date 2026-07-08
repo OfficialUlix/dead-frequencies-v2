@@ -723,6 +723,8 @@ function syncPanel(index) {
   const recovered = app.recovered.has(index);
   const nextCount = recovered ? countRecovered() : Math.min(6, countRecovered() + 1);
 
+  refs.panelHold?.classList.remove("is-holding");
+  setPanelFill(0);
   setText(refs.panelNumber, track.number);
   setText(refs.panelStatus, recovered ? "RECOVERED" : countRecovered() > 0 ? "PARTIAL" : "CORRUPTED");
   setText(refs.panelTitle, track.title);
@@ -734,9 +736,10 @@ function syncPanel(index) {
   setText(refs.panelHoldLabel, recovered ? "FRAGMENT RECOVERED / CLIP ARMED" : "HOLD TO RECOVER FRAGMENT");
 
   if (refs.panelHold) {
-    refs.panelHold.disabled = recovered;
+    refs.panelHold.disabled = false;
     refs.panelHold.setAttribute("aria-disabled", String(recovered));
     refs.panelHold.classList.toggle("is-recovered", recovered);
+    refs.panelHold.tabIndex = recovered ? -1 : 0;
   }
   refs.panelFragment?.classList.toggle("corrupted", !recovered);
   refs.panelFragment?.classList.toggle("is-stable", recovered);
@@ -754,12 +757,17 @@ function openPanel(index) {
 function closePanel() {
   if (app.state !== "panel") return;
   cancelHold();
+  refs.panelHold?.classList.remove("is-holding");
+  if (refs.panelHold) {
+    refs.panelHold.tabIndex = 0;
+  }
   const shouldEnterFinale = app.pendingFinale;
   app.pendingFinale = false;
   fadeOutClip(() => {
     if (shouldEnterFinale) {
       enterFinale();
     } else {
+      app.activeTrack = null;
       setMachineState("sigmap");
     }
   });
@@ -1073,19 +1081,32 @@ function cancelHold() {
 
 function bindHold(target, context) {
   if (!target) return;
+  let pointerId = null;
 
   target.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "touch") return;
     if (event.button !== undefined && event.button !== 0) return;
     event.preventDefault();
+    pointerId = event.pointerId;
     target.setPointerCapture?.(event.pointerId);
     startHold(context);
   });
   target.addEventListener("pointerup", (event) => {
+    if (event.pointerType === "touch") return;
     target.releasePointerCapture?.(event.pointerId);
+    pointerId = null;
     cancelHold();
   });
-  target.addEventListener("pointercancel", cancelHold);
-  target.addEventListener("lostpointercapture", cancelHold);
+  target.addEventListener("pointercancel", (event) => {
+    if (event.pointerType === "touch") return;
+    pointerId = null;
+    cancelHold();
+  });
+  target.addEventListener("lostpointercapture", (event) => {
+    if (event.pointerId !== pointerId) return;
+    pointerId = null;
+    cancelHold();
+  });
   target.addEventListener("touchstart", (event) => {
     event.preventDefault();
     startHold(context);
