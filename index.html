@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-state="gate" data-boot="loading" data-explored="0" data-holding="false">
+<html lang="en" data-state="preboot" data-explored="0" data-holding="false">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -24,6 +24,27 @@
       <div class="atmos__burn atmos__burn--red"></div>
       <div class="atmos__burn atmos__burn--amber"></div>
     </div>
+
+    <section class="preboot" id="preboot" aria-live="polite" aria-label="Dead Frequencies boot sequence">
+      <div class="preboot__texture" aria-hidden="true"></div>
+      <div class="preboot__panel">
+        <p class="preboot__line" data-boot-line>ULIX</p>
+        <p class="preboot__line" data-boot-line>DEAD FREQUENCIES</p>
+        <p class="preboot__line" data-boot-line>RECOVERY NODE DF-06</p>
+        <div class="preboot__gap" aria-hidden="true"></div>
+        <p class="preboot__line" data-boot-line>SIGNAL STATUS: LOST</p>
+        <p class="preboot__line" data-boot-line>CARRIER: NONE</p>
+        <p class="preboot__line" data-boot-line>ARCHIVE: 6 FRAGMENTS DETECTED</p>
+        <p class="preboot__line" data-boot-line>AWAITING TRANSMISSION HANDSHAKE</p>
+        <p class="preboot__line preboot__line--final" data-boot-line>PREPARING MANUAL SIGNAL LOCK...</p>
+        <div class="preboot__wave" aria-hidden="true">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+        <div class="preboot__bar" aria-hidden="true"><span></span></div>
+      </div>
+    </section>
 
     <main class="machine" id="machine" aria-label="Dead Frequencies recovery node">
       <header class="machine__top" aria-label="Console identity">
@@ -109,26 +130,6 @@
         </div>
 
         <p class="gate-instruction" id="gate-instruction">HOLD TO RECOVER SIGNAL</p>
-
-        <section class="boot-sequence" id="boot-sequence" aria-hidden="true" aria-live="polite">
-          <div class="boot-sequence__noise" aria-hidden="true"></div>
-          <div class="boot-sequence__inner">
-            <span class="boot-sequence__eyebrow">LOADING TRANSMISSION</span>
-            <p class="boot-sequence__line" data-boot-line>TRANSMISSION LOADING</p>
-            <p class="boot-sequence__line" data-boot-line>SIGNAL SOURCE: DF-06</p>
-            <p class="boot-sequence__line" data-boot-line>BAND RESPONSE: 6 SIGNALS LOCKED</p>
-            <p class="boot-sequence__line" data-boot-line>PACKET LOSS: 38% / FRAMES CORRUPTED</p>
-            <p class="boot-sequence__line boot-sequence__line--ready" data-boot-line>MANUAL UNLOCK REQUIRED</p>
-            <div class="boot-sequence__meter" aria-hidden="true">
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-          </div>
-        </section>
       </section>
 
       <section class="panel" id="panel" aria-hidden="true" aria-label="Transmission fragment panel">

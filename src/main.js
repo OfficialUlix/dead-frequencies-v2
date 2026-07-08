@@ -99,7 +99,7 @@ const refs = {
   panelProgress: $("#panel-progress"),
   panelHoldLabel: $("#panel-hold-label"),
   listen: $(".listen-link"),
-  boot: $("#boot-sequence"),
+  boot: $("#preboot"),
   bootLines: $$("[data-boot-line]"),
   finaleLineA: $("#finale-line-a"),
   finaleLineB: $("#finale-line-b"),
@@ -114,7 +114,7 @@ const refs = {
 };
 
 const app = {
-  state: "gate",
+  state: "preboot",
   activeTrack: null,
   recovered: new Set(),
   holding: false,
@@ -128,7 +128,6 @@ const app = {
   pendingFinale: false,
   finalePrimed: false,
   finaleDecoded: false,
-  bootReady: false,
   bootTimers: [],
 };
 
@@ -644,23 +643,28 @@ function setMachineState(next) {
   }
 
   if (refs.listen) {
-    const gated = next === "gate";
+    const gated = next === "preboot" || next === "gate";
     refs.listen.setAttribute("aria-disabled", String(gated));
     refs.listen.tabIndex = gated ? -1 : 0;
   }
 
+  if (next === "preboot") {
+    refs.boot?.setAttribute("aria-hidden", "false");
+    app.targetEnergy = 0.1;
+  }
+
   if (next === "gate") {
-    refs.boot?.setAttribute("aria-hidden", String(app.bootReady));
-    setText(refs.state, app.bootReady ? "SIGNAL MAP LOCKED" : "LOADING TRANSMISSION");
-    setText(refs.lock, app.bootReady ? "LOCK: MANUAL" : "LOCK: SEEKING");
-    setText(refs.carrier, app.bootReady ? "CARRIER: UNSTABLE" : "CARRIER: SEARCHING");
+    refs.boot?.setAttribute("aria-hidden", "true");
+    setText(refs.state, "SIGNAL LOST");
+    setText(refs.lock, "LOCK: UNSTABLE");
+    setText(refs.carrier, "CARRIER: NONE");
     setText(refs.frequency, "--.- MHz");
-    setText(refs.fragment, app.bootReady ? "HOLD TO UNLOCK" : "BOOT SEQUENCE");
+    setText(refs.fragment, "MANUAL RECOVERY REQUIRED");
     setText(refs.coreLabel, "DF-06");
-    setText(refs.coreAction, app.bootReady ? "HOLD TO UNLOCK" : "LOADING");
-    setText(refs.coreSub, app.bootReady ? "SIGNAL MAP LOCKED" : "TRANSMISSION");
+    setText(refs.coreAction, "HOLD TO BEGIN");
+    setText(refs.coreSub, "TRANSMISSION");
     refs.panel?.setAttribute("aria-hidden", "true");
-    app.targetEnergy = app.bootReady ? 0.22 : 0.12;
+    app.targetEnergy = 0.22;
   }
 
   if (next === "sigmap") {
@@ -755,10 +759,7 @@ function closePanel() {
 function clearBootIntro() {
   app.bootTimers.forEach((timer) => window.clearTimeout(timer));
   app.bootTimers = [];
-  app.bootReady = false;
-  html.dataset.boot = "loading";
-  body.dataset.boot = "loading";
-  refs.boot?.classList.remove("is-ready");
+  refs.boot?.classList.remove("is-complete");
   refs.bootLines.forEach((line, index) => {
     line.classList.remove("is-visible", "is-glitching");
     setText(line, bootText[index] || "");
@@ -772,14 +773,14 @@ function queueBootStep(callback, delay) {
   return timer;
 }
 
-function runGateBoot() {
+function runPreboot() {
   clearBootIntro();
   refs.boot?.setAttribute("aria-hidden", "false");
-  setMachineState("gate");
+  setMachineState("preboot");
 
   if (reducedMotion.matches) {
     refs.bootLines.forEach((line) => line.classList.add("is-visible"));
-    queueBootStep(markGateReady, 300);
+    queueBootStep(completePreboot, 550);
     return;
   }
 
@@ -789,27 +790,22 @@ function runGateBoot() {
       line.classList.add("is-visible");
       setText(line, terminalGlitch(text, 0));
       resolveTerminalText(line, text, index === refs.bootLines.length - 1 ? 620 : 480, null, { force: true });
-      if (index === 1 || index === 3) playGlitchBurst();
-    }, 220 + index * 470);
+      if (index === 3 || index === 6) playGlitchBurst();
+    }, 220 + index * 410);
   });
 
-  queueBootStep(markGateReady, 3150);
+  queueBootStep(completePreboot, 4550);
 }
 
-function markGateReady() {
-  if (app.state !== "gate") return;
-  app.bootReady = true;
-  html.dataset.boot = "ready";
-  body.dataset.boot = "ready";
-  refs.boot?.classList.add("is-ready");
-  queueBootStep(() => refs.boot?.setAttribute("aria-hidden", "true"), 620);
-  setText(refs.state, "SIGNAL MAP LOCKED");
-  setText(refs.lock, "LOCK: MANUAL");
-  setText(refs.carrier, "CARRIER: UNSTABLE");
-  setText(refs.fragment, "HOLD TO UNLOCK");
-  setText(refs.coreAction, "HOLD TO UNLOCK");
-  setText(refs.coreSub, "SIGNAL MAP LOCKED");
-  app.targetEnergy = 0.3;
+function completePreboot() {
+  if (app.state !== "preboot") return;
+  refs.boot?.classList.add("is-complete");
+  playGlitchBurst();
+  queueBootStep(() => {
+    refs.boot?.setAttribute("aria-hidden", "true");
+    setMachineState("gate");
+    setGateRing(0);
+  }, reducedMotion.matches ? 80 : 620);
 }
 
 function completeGateHold() {
@@ -889,7 +885,7 @@ function decodeFinale() {
 
 function startHold(context) {
   if (app.holding) return;
-  if (context === "gate" && (app.state !== "gate" || !app.bootReady)) return;
+  if (context === "gate" && app.state !== "gate") return;
   if (context === "panel" && (app.state !== "panel" || app.activeTrack === null || app.recovered.has(app.activeTrack))) return;
   if (context === "finale" && (app.state !== "finale" || !app.finalePrimed || app.finaleDecoded)) return;
 
@@ -1099,7 +1095,7 @@ function replaySignal() {
   resetFinaleSequence();
   setGateRing(0);
   setPanelFill(0);
-  runGateBoot();
+  runPreboot();
 }
 
 function viewTransmissions() {
@@ -1286,6 +1282,6 @@ setPanelFill(0);
 setFinaleFill(0);
 body.dataset.holding = "false";
 suppressTouchHighlight();
-runGateBoot();
+runPreboot();
 resizeCanvas();
 raf = requestAnimationFrame(render);
