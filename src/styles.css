@@ -737,6 +737,57 @@ a {
   animation: prebootBar 4.4s var(--ease) forwards;
 }
 
+.preboot-hold {
+  position: relative;
+  z-index: 1;
+  width: min(360px, 78vw);
+  min-height: 50px;
+  margin-top: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(212, 72, 47, 0.34);
+  border-radius: 2px;
+  background: rgba(212, 72, 47, 0.055);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: clamp(10px, 1.8vw, 12px);
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transform: translate3d(0, 8px, 0);
+  transition: opacity 520ms var(--ease), transform 520ms var(--ease), border-color 320ms var(--ease);
+}
+
+.preboot.is-ready .preboot-hold {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate3d(0, 0, 0);
+}
+
+.preboot-hold.is-holding {
+  border-color: rgba(212, 72, 47, 0.7);
+}
+
+.preboot-hold__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0%;
+  background: rgba(212, 72, 47, 0.2);
+  transition: width 80ms linear;
+}
+
+.preboot-hold span:last-child {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
 .orbit {
   position: absolute;
   inset: 0;

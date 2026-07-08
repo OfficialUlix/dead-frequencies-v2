@@ -60,6 +60,7 @@ const TRACKS = [
 
 const INTEGRITY = [0, 18, 32, 49, 66, 84, 100];
 const HOLD = {
+  preboot: 1450,
   gate: 1650,
   panel: 900,
   finale: 1500,
@@ -101,6 +102,8 @@ const refs = {
   listen: $(".listen-link"),
   boot: $("#preboot"),
   bootLines: $$("[data-boot-line]"),
+  prebootHold: $("#preboot-hold"),
+  prebootProgress: $("#preboot-progress"),
   finaleLineA: $("#finale-line-a"),
   finaleLineB: $("#finale-line-b"),
   finaleHoldWrap: $("#finale-hold-wrap"),
@@ -128,6 +131,7 @@ const app = {
   pendingFinale: false,
   finalePrimed: false,
   finaleDecoded: false,
+  prebootReady: false,
   bootTimers: [],
 };
 
@@ -165,6 +169,11 @@ function setText(node, value) {
 function setGateRing(value) {
   if (!refs.gateProgress) return;
   refs.gateProgress.style.strokeDashoffset = String(RING_LENGTH * (1 - Math.max(0, Math.min(1, value))));
+}
+
+function setPrebootFill(value) {
+  if (!refs.prebootProgress) return;
+  refs.prebootProgress.style.width = `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
 }
 
 function setPanelFill(value) {
@@ -759,11 +768,14 @@ function closePanel() {
 function clearBootIntro() {
   app.bootTimers.forEach((timer) => window.clearTimeout(timer));
   app.bootTimers = [];
-  refs.boot?.classList.remove("is-complete");
+  app.prebootReady = false;
+  refs.boot?.classList.remove("is-ready", "is-complete");
   refs.bootLines.forEach((line, index) => {
     line.classList.remove("is-visible", "is-glitching");
     setText(line, bootText[index] || "");
   });
+  refs.prebootHold?.classList.remove("is-holding");
+  setPrebootFill(0);
   refs.boot?.setAttribute("aria-hidden", "true");
 }
 
@@ -780,7 +792,7 @@ function runPreboot() {
 
   if (reducedMotion.matches) {
     refs.bootLines.forEach((line) => line.classList.add("is-visible"));
-    queueBootStep(completePreboot, 550);
+    queueBootStep(markPrebootReady, 550);
     return;
   }
 
@@ -797,28 +809,41 @@ function runPreboot() {
     }, firstDelay + index * lineDelay);
   });
 
-  queueBootStep(completePreboot, firstDelay + refs.bootLines.length * lineDelay + 760);
+  queueBootStep(markPrebootReady, firstDelay + refs.bootLines.length * lineDelay + 760);
 }
 
-function completePreboot() {
+function markPrebootReady() {
   if (app.state !== "preboot") return;
+  app.prebootReady = true;
+  refs.boot?.classList.add("is-ready");
+  playGlitchBurst();
+  setPrebootFill(0);
+}
+
+function armAudioForTransmission() {
+  const player = ensureAudio();
+  player.muted = false;
+  player.volume = 1;
+  resumeAudioContext();
+  audioUnlocked = true;
+}
+
+function completePrebootHold() {
+  setPrebootFill(1);
   refs.boot?.classList.add("is-complete");
+  armAudioForTransmission();
   playGlitchBurst();
   queueBootStep(() => {
     refs.boot?.setAttribute("aria-hidden", "true");
-    setMachineState("gate");
-    setGateRing(0);
+    setMachineState("sigmap");
+    startDrone();
   }, reducedMotion.matches ? 80 : 620);
 }
 
 function completeGateHold() {
   setGateRing(1);
   refs.boot?.setAttribute("aria-hidden", "true");
-  const player = ensureAudio();
-  player.muted = false;
-  player.volume = 1;
-  resumeAudioContext();
-  audioUnlocked = true;
+  armAudioForTransmission();
   playGlitchBurst();
   setMachineState("sigmap");
   startDrone();
@@ -893,6 +918,7 @@ function decodeFinale() {
 
 function startHold(context) {
   if (app.holding) return;
+  if (context === "preboot" && (app.state !== "preboot" || !app.prebootReady)) return;
   if (context === "gate" && app.state !== "gate") return;
   if (context === "panel" && (app.state !== "panel" || app.activeTrack === null || app.recovered.has(app.activeTrack))) return;
   if (context === "finale" && (app.state !== "finale" || !app.finalePrimed || app.finaleDecoded)) return;
@@ -905,10 +931,15 @@ function startHold(context) {
   body.dataset.holding = "true";
   unlockAudio();
   resetTactile();
+  refs.prebootHold?.classList.toggle("is-holding", context === "preboot");
   refs.gateHold?.classList.toggle("is-holding", context === "gate");
   refs.panelHold?.classList.toggle("is-holding", context === "panel");
   refs.finaleHold?.classList.toggle("is-holding", context === "finale");
 
+  if (context === "preboot") {
+    unlockAudio();
+    playGlitchBurst();
+  }
   if (context === "gate") {
     playGlitchBurst();
     setText(refs.state, "CARRIER DETECTED");
@@ -953,6 +984,12 @@ function updateHold(now) {
     }
   }
 
+  if (app.holdContext === "preboot") {
+    updateHoldTactile(progress);
+    setPrebootFill(progress);
+    app.targetEnergy = 0.16 + progress * 0.58;
+  }
+
   if (app.holdContext === "panel") {
     updateHoldTactile(progress);
     setPanelFill(progress);
@@ -986,12 +1023,14 @@ function finishHold() {
   html.dataset.holding = "false";
   body.dataset.holding = "false";
   refs.gateHold?.classList.remove("is-holding");
+  refs.prebootHold?.classList.remove("is-holding");
   refs.panelHold?.classList.remove("is-holding");
   refs.finaleHold?.classList.remove("is-holding");
   refs.panelFragment?.classList.remove("is-glitching");
   resetTactile();
   playLockSound();
 
+  if (context === "preboot") completePrebootHold();
   if (context === "gate") completeGateHold();
   if (context === "panel") recoverActiveFragment();
   if (context === "finale") decodeFinale();
@@ -1007,11 +1046,15 @@ function cancelHold() {
   html.dataset.holding = "false";
   body.dataset.holding = "false";
   refs.gateHold?.classList.remove("is-holding");
+  refs.prebootHold?.classList.remove("is-holding");
   refs.panelHold?.classList.remove("is-holding");
   refs.finaleHold?.classList.remove("is-holding");
   refs.panelFragment?.classList.remove("is-glitching");
   resetTactile();
 
+  if (context === "preboot") {
+    setPrebootFill(0);
+  }
   if (context === "gate") {
     setGateRing(0);
     setMachineState("gate");
@@ -1072,8 +1115,8 @@ function bindHold(target, context) {
 }
 
 function suppressTouchHighlight() {
-  const interactive = "button, a, .node, .core-node, .recover-hold, .finale-hold-button, .panel__close, .finale-action";
-  const holdControl = ".core-node, .recover-hold, .finale-hold-button";
+  const interactive = "button, a, .node, .preboot-hold, .core-node, .recover-hold, .finale-hold-button, .panel__close, .finale-action";
+  const holdControl = ".preboot-hold, .core-node, .recover-hold, .finale-hold-button";
 
   document.addEventListener("touchstart", (event) => {
     const target = event.target.closest(interactive);
@@ -1261,6 +1304,7 @@ function render(time = 0) {
   raf = requestAnimationFrame(render);
 }
 
+bindHold(refs.prebootHold, "preboot");
 bindHold(refs.gateHold, "gate");
 bindHold(refs.panelHold, "panel");
 bindHold(refs.finaleHold, "finale");
